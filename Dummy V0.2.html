@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kaspa GHOSTDAG Protocol Visualizer</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body { height: 100%; overflow: hidden; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+            background-color: #f6f8fa; color: #24292f;
+        }
+        .container { width: 100%; display: flex; flex-direction: column; position: relative; }
+        .header {
+            text-align: center; padding: 20px 0; background: white;
+            border-bottom: 1px solid #d1d9e0;
+        }
+        .header h1 { font-size: 24px; font-weight: 600; margin-bottom: 5px; }
+        .header .subtitle { color: #57606a; font-size: 14px; }
+        .visualization { flex: 1; position: relative; overflow: hidden; background: white; }
+        .zone-labels {
+            position: absolute; top: 20px; left: 0; right: 0;
+            display: flex; justify-content: space-between;
+            padding: 0 50px; z-index: 10;
+        }
+        .zone-label { color: #57606a; font-size: 12px; font-weight: 500; }
+        .canvas-container { position: absolute; top: 60px; left: 0; right: 0; bottom: 100px; }
+        .block {
+            position: absolute; border-radius: 6px;
+            display: flex; align-items: center; justify-content: center;
+            color: white; font-weight: 600; cursor: pointer;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1); z-index: 5;
+            transition: transform 0.3s, width 0.3s, height 0.3s;
+            text-align: center; white-space: pre-wrap;
+            word-break: break-all; font-size: 10px; line-height: 1.1;
+        }
+        .block.blue { background: #0969da; }
+        .block.red { background: #cf222e; }
+        .block.virtual-chain {
+            box-shadow: 0 0 20px rgba(9, 105, 218, 0.5); z-index: 6;
+            background-color: #0550ae;
+        }
+        .block:hover { transform: scale(1.05); z-index: 10; }
+        #dagCanvas, #virtualCanvas { position: absolute; top: 0; left: 0; pointer-events: none; }
+        #dagCanvas { z-index: 1; }
+        #virtualCanvas { z-index: 2; }
+        .daa-score {
+            position: absolute; color: #8b949e; text-align: center;
+            z-index: 3; transform: translateX(-50%); font-size: 10px;
+        }
+        .stats-panel {
+            position: absolute; bottom: 20px; left: 20px; background: white;
+            border: 1px solid #d1d9e0; border-radius: 6px; padding: 15px;
+            min-width: 200px; z-index: 10;
+        }
+        .stats-title { color: #57606a; font-size: 11px; font-weight: 500; margin-bottom: 10px; }
+        .stat-item { color: #8b949e; font-size: 10px; margin-bottom: 5px; }
+        .stat-value { color: #0969da; font-weight: 600; }
+        .controls { position: absolute; bottom: 20px; right: 20px; z-index: 10; }
+        button {
+            background: #0969da; color: white; border: none; padding: 8px 16px;
+            border-radius: 6px; font-size: 14px; cursor: pointer; margin: 0 5px;
+            transition: background 0.2s; min-width: 40px;
+        }
+        button:hover { background: #0860ca; }
+        button:disabled { background: #8b949e; cursor: not-allowed; }
+        .fade-in { animation: fadeIn 0.3s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: scale(0.8); } to { opacity: 1; transform: scale(1); } }
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5); z-index: 1000;
+            display: none; justify-content: center; align-items: center;
+        }
+        .modal-content {
+            background: white; padding: 20px; border-radius: 8px;
+            max-width: 90%; max-height: 90%; overflow: auto;
+            font-family: 'Courier New', Courier, monospace;
+        }
+    </style>
+</head>
+<body>
+    <div class="container" id="mainContainer">
+        <div class="header">
+            <h1>Kaspa GHOSTDAG Protocol Visualizer</h1>
+            <p class="subtitle">10 BPS</p>
+        </div>
+        <div class="visualization">
+            <div class="zone-labels">
+                <span class="zone-label">LINEAR CHAIN</span>
+                <span class="zone-label">GHOSTDAG ORDERING</span>
+                <span class="zone-label">PARALLEL BLOCKS</span>
+            </div>
+            <div class="canvas-container" id="canvasContainer">
+                <canvas id="dagCanvas"></canvas>
+                <canvas id="virtualCanvas"></canvas>
+            </div>
+            <div class="stats-panel">
+                <div class="stats-title">NETWORK STATS</div>
+                <div class="stat-item">Block Rate: <span class="stat-value">10 BPS</span></div>
+                <div class="stat-item">Blue Score: <span class="stat-value" id="blueScore">...</span></div>
+                <div class="stat-item">DAA Score: <span class="stat-value" id="daaScore">...</span></div>
+                <div class="stat-item">Current BPS: <span class="stat-value" id="currentBPS">0</span></div>
+            </div>
+            <div class="controls">
+                <button onclick="toggleAnimation()" id="toggleBtn">Pause</button>
+                <button onclick="resetVisualization()">Reset</button>
+                <button onclick="zoomOut()" id="zoomOutBtn">-</button>
+                <button onclick="zoomIn()" id="zoomInBtn">+</button>
+            </div>
+        </div>
+        <div class="modal-overlay" id="infoModal" onclick="closeInfoModal()">
+            <div class="modal-content" onclick="event.stopPropagation()">
+                <pre id="modalText"></pre>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // Global state
+        let blocks = [], daaScores = [];
+        let animationRunning = true;
+        let canvas, ctx, virtualCanvas, vCtx;
+        let containerWidth, containerHeight, centerY;
+        let blocksThisSecond = 0, secondTimer = Date.now();
+        let generationEventCounter = 0;
+        let dataFetchInterval, animationLoopId;
+        let blockCache = [];
+        let blueScore = 0, daaScore = 0;
+        
+        // Zoom state
+        let zoomLevel = 1.0;
+        const ZOOM_STEP = 0.2, MIN_ZOOM = 0.4, MAX_ZOOM = 1.6;
+
+        // Base values
+        const BASE_BLOCK_SIZE = 50, BASE_VIRTUAL_BLOCK_SIZE = 70;
+        const BASE_FONT_SIZE = 10;
+        const BASE_SLIDE_SPEED = 2.5;
+        const BASE_MIN_DISTANCE_X = 120, GUARANTEED_MIN_DISTANCE = 80;
+        const BASE_LINE_WIDTH = 1.5, MIN_PARENT_DISTANCE = 20;
+
+        let zones = { parallel: { start: 0.7, end: 1.0 }, transform: { start: 0.4, end: 0.7 }, linear: { start: 0, end: 0.4 } };
+        
+        function setContainerHeight() { document.getElementById('mainContainer').style.height = `${window.innerHeight}px`; }
+
+        function init() {
+            setContainerHeight();
+            canvas = document.getElementById('dagCanvas'); ctx = canvas.getContext('2d');
+            virtualCanvas = document.getElementById('virtualCanvas'); vCtx = virtualCanvas.getContext('2d');
+            resizeCanvas();
+            startDataFetching();
+            updateZoomButtons();
+            animate();
+        }
+        
+        function resizeCanvas() {
+            const container = document.getElementById('canvasContainer');
+            containerWidth = container.clientWidth; containerHeight = container.clientHeight;
+            centerY = containerHeight / 2;
+            canvas.width = containerWidth; canvas.height = containerHeight;
+            virtualCanvas.width = containerWidth; virtualCanvas.height = containerHeight;
+        }
+        
+        class Block {
+            constructor(rawBlockData) {
+                this.raw_data = rawBlockData;
+                this.id = rawBlockData.hash;
+                this.parentHashes = rawBlockData.parentHashes;
+                this.isBlue = rawBlockData.isChainBlock;
+                this.isDelayed = rawBlockData.isDelayed;
+                this.isVirtualChain = rawBlockData.isVirtualChain;
+                this.parents = [];
+                this.daaScore = rawBlockData.daaScore;
+                this.element = null;
+                this.x_velocity_adjustment = 0;
+                this.velocity_multiplier = 1.0;
+                this.childCount = 0;
+                this.displayText = "";
+                this.y = rawBlockData.y;
+                this.x = this.isDelayed ? rawBlockData.x : containerWidth - 50;
+                this.zone = this.getZone();
+            }
+            
+            getZone() {
+                const relativeX = this.x / containerWidth;
+                if (relativeX > zones.parallel.start) return 'parallel';
+                if (relativeX > zones.transform.start) return 'transform';
+                return 'linear';
+            }
+            
+            createElement() {
+                const div = document.createElement('div');
+                div.className = `block ${this.isBlue ? 'blue' : 'red'} fade-in`;
+                div.id = `block-${this.id}`;
+                this.element = div;
+                this.updateDisplayText();
+                this.updateStyle();
+                document.getElementById('canvasContainer').appendChild(div);
+                this.element.addEventListener('click', () => showInfoModal(this.raw_data));
+            }
+
+            updateDisplayText() {
+                if (zoomLevel <= MIN_ZOOM) { this.displayText = ""; return; }
+                const padding = 8 * zoomLevel; 
+                const size = (this.isVirtualChain ? BASE_VIRTUAL_BLOCK_SIZE : BASE_BLOCK_SIZE) * zoomLevel;
+                const effectiveWidth = Math.max(0, size - padding * 2);
+                const charWidth = BASE_FONT_SIZE * 0.6;
+                const charsPerLine = Math.floor(effectiveWidth / charWidth);
+                if (charsPerLine <= 2) { this.displayText = ""; return; }
+                const maxLines = Math.floor(Math.max(0, size - padding * 2) / (BASE_FONT_SIZE * 1.1));
+                if (maxLines <= 0) { this.displayText = ""; return; }
+                const totalChars = Math.min(this.id.length, charsPerLine * maxLines);
+                let text = this.id.substring(0, totalChars);
+                let result = "";
+                for (let i = 0; i < totalChars; i += charsPerLine) {
+                    result += text.substring(i, i + charsPerLine) + '\n';
+                }
+                this.displayText = result.trim();
+            }
+            
+            updateStyle() {
+                if (!this.element) return;
+                this.element.innerText = this.displayText;
+                if (this.isVirtualChain) this.element.classList.add('virtual-chain');
+                else this.element.classList.remove('virtual-chain');
+                const size = (this.isVirtualChain ? BASE_VIRTUAL_BLOCK_SIZE : BASE_BLOCK_SIZE) * zoomLevel;
+                this.element.style.width = `${size}px`; this.element.style.height = `${size}px`;
+                this.element.style.padding = `${8 * zoomLevel}px`;
+                this.element.style.fontSize = `${BASE_FONT_SIZE}px`;
+                this.element.style.left = `${this.x}px`; this.element.style.top = `${this.y}px`;
+            }
+
+            updatePosition() {
+                this.x -= (BASE_SLIDE_SPEED * zoomLevel * this.velocity_multiplier) + this.x_velocity_adjustment;
+                const prevZone = this.zone;
+                if (!this.isBlue && this.parents.length > 0) {
+                    const validParents = this.parents.filter(p => p);
+                    if (validParents.length > 0) {
+                        let avgParentX = 0; validParents.forEach(p => avgParentX += p.x);
+                        avgParentX /= validParents.length;
+                        if (this.x > avgParentX) this.x += (avgParentX - this.x) * 0.025;
+                    }
+                }
+                this.zone = this.getZone();
+                const size = (this.isVirtualChain ? BASE_VIRTUAL_BLOCK_SIZE : BASE_BLOCK_SIZE) * zoomLevel;
+                if (prevZone !== this.zone) {
+                    if (this.zone === 'transform') {
+                        if (this.isBlue) this.targetY = centerY - size / 2; else this.targetY = centerY + 150;
+                    }
+                    if (this.zone === 'linear' && this.isBlue) {
+                        daaScores.push(new DAAScoreLabel(this.daaScore, this));
+                    }
+                }
+                if (Math.abs(this.y - this.targetY) > 1) this.y += (this.targetY - this.y) * 0.025;
+                if (this.zone === 'linear' && this.isBlue) this.targetY = centerY - size / 2;
+                if (this.element) this.updateStyle();
+            }
+            
+            getCenterX() { return this.x + ((this.isVirtualChain ? BASE_VIRTUAL_BLOCK_SIZE : BASE_BLOCK_SIZE) * zoomLevel) / 2; }
+            getCenterY() { return this.y + ((this.isVirtualChain ? BASE_VIRTUAL_BLOCK_SIZE : BASE_BLOCK_SIZE) * zoomLevel) / 2; }
+            
+            remove() { if (this.element) this.element.remove(); }
+        }
+        
+        class DAAScoreLabel {
+            constructor(score, targetBlock) {
+                this.score = score; this.targetBlock = targetBlock; this.element = null;
+                const interval = Math.max(1, Math.round(2 / zoomLevel));
+                this.isVisible = (daaScores.length % interval === 0);
+                this.createElement();
+            }
+            createElement() {
+                const div = document.createElement('div');
+                div.className = 'daa-score';
+                div.textContent = this.score.toLocaleString();
+                if (!this.isVisible) div.style.display = 'none';
+                this.element = div; this.updatePosition();
+                document.getElementById('canvasContainer').appendChild(div);
+            }
+            updatePosition() {
+                if (this.targetBlock && this.element) {
+                    this.element.style.left = `${this.targetBlock.getCenterX()}px`;
+                    this.element.style.top = `${containerHeight - 80}px`;
+                }
+            }
+            remove() { if (this.element) this.element.remove(); }
+        }
+        
+        function generateHash() { return [...Array(64)].map(() => Math.floor(Math.random() * 16).toString(16)).join(''); }
+        function poissonRandom(lambda) { let L = Math.exp(-lambda), k = 0, p = 1; do { k++; p *= Math.random(); } while (p > L); return k - 1; }
+        
+        function fetchDummyBlocks() {
+            generationEventCounter++;
+            const rawBlocks = [];
+            let currentBlueScore = blocks.length > 0 ? Math.max(0, ...blocks.map(b => b.raw_data.blueScore)) : 0;
+            let currentDaaScore = blocks.length > 0 ? Math.max(0, ...blocks.map(b => b.raw_data.daaScore)) : 0;
+
+            if (generationEventCounter % 10 === 0 && blocks.length > 5) {
+                const parents = [], children = [], parentCandidates = blocks.filter(b => b.x < containerWidth - 200);
+                if (parentCandidates.length < 2) return;
+                parents.push(parentCandidates[Math.floor(Math.random() * parentCandidates.length)]);
+                parents.push(parentCandidates[Math.floor(Math.random() * parentCandidates.length)]);
+                const maxParentX = Math.max(...parents.map(p => p.x));
+                const childCandidates = blocks.filter(b => b.x > maxParentX + 100);
+                if(childCandidates.length > 0) children.push(childCandidates[Math.floor(Math.random() * childCandidates.length)]);
+                const newX = children.length > 0 ? (maxParentX + Math.min(...children.map(c => c.x))) / 2 : maxParentX + 100 * zoomLevel;
+                const newY = centerY - 200 + Math.random() * 400;
+                rawBlocks.push({ hash: generateHash(), parentHashes: parents.map(p => p.id), childHashes: children.map(c => c.id), isChainBlock: true, isVirtualChain: false, isDelayed: true, x: newX, y: newY, blueScore: currentBlueScore + 1, daaScore: currentDaaScore + 10 });
+            } else {
+                let count = poissonRandom(5); count = Math.min(count, 18);
+                if (count > 0) {
+                    const recentBlocks = blocks.filter(b => b.x > containerWidth - 300);
+                    const ySlots = [], yStep = 60 * zoomLevel;
+                    for (let y = centerY - 200; y <= centerY + 200; y += yStep) ySlots.push(y);
+                    const validYPositions = ySlots.filter(y => !recentBlocks.some(block => Math.abs(block.x - (containerWidth-50)) < 80 * zoomLevel && Math.abs(block.y - y) < 60 * zoomLevel));
+                    for (let i = 0; i < count && validYPositions.length > 0; i++) {
+                        const y = validYPositions.splice(Math.floor(Math.random() * validYPositions.length), 1)[0];
+                        const potentialParents = blocks.filter(b => b.x < containerWidth - 100 && b.x > containerWidth - 450);
+                        const parentHashes = [];
+                        if (potentialParents.length > 0) {
+                            const parentCount = Math.min(potentialParents.length, Math.floor(Math.random() * 8) + 1);
+                            for (let j = 0; j < parentCount; j++) {
+                                const availableParents = potentialParents.filter(p => p.isBlue || p.childCount < 1);
+                                if (availableParents.length === 0) break;
+                                const parent = availableParents[Math.floor(Math.random() * availableParents.length)];
+                                if (!parentHashes.includes(parent.id)) {
+                                    parentHashes.push(parent.id);
+                                    const parentBlock = blocks.find(b => b.id === parent.id);
+                                    if(parentBlock && !parentBlock.isBlue) parentBlock.childCount++;
+                                }
+                            }
+                        }
+                        rawBlocks.push({ hash: generateHash(), parentHashes: parentHashes, isChainBlock: Math.random() > 0.015, isVirtualChain: false, isDelayed: false, y: y, blueScore: currentBlueScore + 1 + i, daaScore: currentDaaScore + 10 + i*10 });
+                    }
+                }
+            }
+
+            if(rawBlocks.length > 0) {
+                const blueTipBlocks = rawBlocks.filter(rb => rb.isChainBlock && !rb.isDelayed);
+                if (blueTipBlocks.length > 0) {
+                    const vcTip = blueTipBlocks.reduce((max, block) => block.blueScore > max.blueScore ? block : max, blueTipBlocks[0]);
+                    vcTip.isVirtualChain = true;
+                }
+                blockCache.push(...rawBlocks);
+            }
+        }
+        
+        function processNewBlocks(rawBlocks) {
+            const newBlockInstances = [];
+            rawBlocks.forEach(rb => {
+                if (blocks.some(b => b.id === rb.hash)) return;
+                const newBlock = new Block(rb);
+                blocks.push(newBlock);
+                newBlockInstances.push(newBlock);
+                if (rb.isDelayed && rb.childHashes) {
+                    rb.childHashes.forEach(childId => {
+                        const childBlock = blocks.find(b => b.id === childId);
+                        if (childBlock) childBlock.parentHashes.push(newBlock.id);
+                    });
+                }
+            });
+            blocks.forEach(b => { b.parents = b.parentHashes.map(hash => blocks.find(p => p.id === hash)).filter(p => p); });
+            newBlockInstances.forEach(b => b.createElement());
+            updateStats(rawBlocks);
+        }
+
+        function startDataFetching() {
+            fetchDummyBlocks();
+            dataFetchInterval = setInterval(fetchDummyBlocks, 500);
+        }
+        
+        function determineSiblingOrder() {
+            const siblings = blocks.filter(b => b.isBlue && !b.isVirtualChain);
+            if (siblings.length < 2) return;
+            siblings.forEach(s => s.x_velocity_adjustment = 0);
+            for (let i = 0; i < siblings.length; i++) {
+                for (let j = i + 1; j < siblings.length; j++) {
+                    const blockA = siblings[i], blockB = siblings[j];
+                    const order = (blockA.raw_data.blueScore || 0) - (blockB.raw_data.blueScore || 0);
+                    const shouldAbeFirst = order <= 0;
+                    const isAFirstSpatially = blockA.x < blockB.x;
+                    const adjustment = 0.1 * zoomLevel;
+                    if (shouldAbeFirst && !isAFirstSpatially) {
+                        blockA.x_velocity_adjustment += adjustment; blockB.x_velocity_adjustment -= adjustment;
+                    } else if (!shouldAbeFirst && isAFirstSpatially) {
+                        blockA.x_velocity_adjustment -= adjustment; blockB.x_velocity_adjustment += adjustment;
+                    }
+                }
+            }
+        }
+
+        function adjustBlockPositions() {
+            blocks.forEach(b => b.velocity_multiplier = 1.0);
+            for (let i = 0; i < blocks.length; i++) {
+                for (let j = i + 1; j < blocks.length; j++) {
+                    const blockA = blocks[i], blockB = blocks[j];
+                    const dx = blockA.x - blockB.x;
+                    if (Math.abs(dx) < BASE_MIN_DISTANCE_X * zoomLevel) {
+                         const dy = blockA.y - blockB.y;
+                         if (Math.abs(dy) < 60 * zoomLevel) {
+                            const order = (blockA.raw_data.blueScore || 0) - (blockB.raw_data.blueScore || 0);
+                            const shouldAbeFirst = order <= 0;
+                            const isAFirstSpatially = blockA.x < blockB.x;
+                            if (isAFirstSpatially !== shouldAbeFirst) {
+                                if (shouldAbeFirst) blockB.velocity_multiplier = 0.5; else blockA.velocity_multiplier = 0.5;
+                            } else {
+                                const overlap = (BASE_MIN_DISTANCE_X * zoomLevel) - Math.abs(dx);
+                                if (isAFirstSpatially) blockA.x -= overlap/2; else blockB.x -= overlap/2;
+                            }
+                         }
+                    }
+                }
+            }
+            for(let k = 0; k < 3; k++) {
+                for (let i = 0; i < blocks.length; i++) {
+                    for (let j = i + 1; j < blocks.length; j++) {
+                         const blockA = blocks[i], blockB = blocks[j];
+                         const dx = blockA.x - blockB.x, dy = blockA.y - blockB.y;
+                         if (Math.abs(dy) < 60 * zoomLevel) {
+                            const dist = GUARANTEED_MIN_DISTANCE * zoomLevel;
+                            if (Math.abs(dx) < dist) {
+                                const overlap = dist - Math.abs(dx);
+                                const correction = overlap * 0.2;
+                                if(blockA.x < blockB.x) blockA.x -= correction; else blockB.x -= correction;
+                            }
+                         }
+                    }
+                }
+            }
+        }
+        
+        function animate() {
+            animationLoopId = requestAnimationFrame(animate);
+            if (!animationRunning) return;
+            // 【修正点】ブロックの動的追加ロジック
+            if (blockCache.length > 0) {
+                const spawnAreaHeight = 400;
+                const blockSpacingY = 60 * zoomLevel;
+                const maxBlocksPerSubBatch = Math.max(1, Math.floor(spawnAreaHeight / blockSpacingY));
+                const blocksToProcess = blockCache.splice(0, maxBlocksPerSubBatch);
+                if (blocksToProcess.length > 0) {
+                    processNewBlocks(blocksToProcess);
+                }
+            }
+            ctx.clearRect(0, 0, canvas.width, canvas.height); vCtx.clearRect(0, 0, virtualCanvas.width, virtualCanvas.height);
+            determineSiblingOrder();
+            blocks.forEach(block => block.updatePosition());
+            adjustBlockPositions();
+            daaScores.forEach(score => score.updatePosition());
+            const removalThreshold = -500;
+            const blocksOnScreen = blocks.filter(b => b.x > removalThreshold);
+            if (blocksOnScreen.length < blocks.length) {
+                const blocksToRemove = blocks.filter(b => !blocksOnScreen.includes(b));
+                blocksToRemove.forEach(b => b.remove());
+                blocks = blocksOnScreen;
+            }
+            daaScores = daaScores.filter(s => (s.targetBlock && blocks.includes(s.targetBlock)) || (s.remove(), false));
+            drawConnections();
+            drawVirtualChain();
+        }
+        
+        function drawConnections() {
+            ctx.strokeStyle = '#8b949e'; ctx.lineWidth = BASE_LINE_WIDTH * zoomLevel; ctx.fillStyle = '#8b949e';
+            blocks.forEach(block => {
+                block.parents.forEach(parent => {
+                    if (parent && parent.element) {
+                        const x1 = block.getCenterX(), y1 = block.getCenterY(), x2 = parent.getCenterX(), y2 = parent.getCenterY();
+                        ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+                        const angle = Math.atan2(y2 - y1, x2 - x1), len = 6 * zoomLevel;
+                        ctx.beginPath(); ctx.moveTo(x2, y2);
+                        ctx.lineTo(x2 - len * Math.cos(angle - Math.PI / 6), y2 - len * Math.sin(angle - Math.PI / 6));
+                        ctx.lineTo(x2 - len * Math.cos(angle + Math.PI / 6), y2 - len * Math.sin(angle + Math.PI / 6));
+                        ctx.closePath(); ctx.fill();
+                    }
+                });
+            });
+        }
+        
+        function drawVirtualChain() {
+            const virtualBlocks = blocks.filter(b => b.isVirtualChain);
+            if (virtualBlocks.length < 2) return;
+            vCtx.strokeStyle = '#0969da'; vCtx.lineWidth = 4 * zoomLevel; vCtx.globalAlpha = 0.8;
+            virtualBlocks.sort((a, b) => a.x - b.x);
+            vCtx.beginPath();
+            virtualBlocks.forEach((block, i) => {
+                const x = block.getCenterX(), y = block.getCenterY();
+                if (i === 0) vCtx.moveTo(x, y); else vCtx.lineTo(x, y);
+            });
+            vCtx.stroke(); vCtx.globalAlpha = 1;
+        }
+        
+        function updateStats(newRawBlocks = []) {
+            blocksThisSecond += newRawBlocks.length;
+            if (newRawBlocks.length > 0) {
+                 blueScore = Math.max(blueScore, ...newRawBlocks.map(b => b.blueScore));
+                 daaScore = Math.max(daaScore, ...newRawBlocks.map(b => b.daaScore));
+            }
+            if (Date.now() - secondTimer > 1000) {
+                 document.getElementById('blueScore').textContent = blueScore.toLocaleString();
+                 document.getElementById('daaScore').textContent = daaScore.toLocaleString();
+                 document.getElementById('currentBPS').textContent = blocksThisSecond;
+                 blocksThisSecond = 0; secondTimer = Date.now();
+            }
+        }
+
+        function applyZoom() {
+            const normalizedZoom = (zoomLevel - MIN_ZOOM) / (MAX_ZOOM - MIN_ZOOM);
+            const linearEnd = 0.2 + 0.4 * (1 - normalizedZoom);
+            const transformEnd = linearEnd + 0.3;
+            zones.linear.end = linearEnd;
+            zones.transform.start = linearEnd; zones.transform.end = transformEnd;
+            zones.parallel.start = transformEnd;
+            blocks.forEach(b => {
+                b.updateDisplayText();
+                b.updateStyle();
+            });
+            updateZoomButtons();
+        }
+
+        function zoomIn() { if (zoomLevel < MAX_ZOOM) { zoomLevel = Math.min(MAX_ZOOM, zoomLevel + ZOOM_STEP); applyZoom(); } }
+        function zoomOut() { if (zoomLevel > MIN_ZOOM) { zoomLevel = Math.max(MIN_ZOOM, zoomLevel - ZOOM_STEP); applyZoom(); } }
+        function updateZoomButtons() {
+            document.getElementById('zoomInBtn').disabled = zoomLevel >= MAX_ZOOM;
+            document.getElementById('zoomOutBtn').disabled = zoomLevel <= MIN_ZOOM;
+        }
+        
+        let pauseTimeout;
+        function toggleAnimation() {
+            animationRunning = !animationRunning;
+            document.getElementById('toggleBtn').textContent = animationRunning ? 'Resume' : 'Pause';
+            if (animationRunning) {
+                clearTimeout(pauseTimeout);
+                if(!dataFetchInterval) startDataFetching();
+                animate();
+            } else {
+                cancelAnimationFrame(animationLoopId);
+                pauseTimeout = setTimeout(() => {
+                    clearInterval(dataFetchInterval);
+                    dataFetchInterval = null;
+                }, 2000);
+            }
+        }
+        
+        function resetVisualization() {
+            blocks.forEach(b => b.remove()); daaScores.forEach(s => s.remove());
+            blocks = []; daaScores = []; blockCache = [];
+            generationEventCounter = 0; blueScore = 0; daaScore = 0;
+            if (zoomLevel !== 1.0) { zoomLevel = 1.0; applyZoom(); }
+            updateStats();
+        }
+
+        function showInfoModal(data) {
+            const modal = document.getElementById('infoModal');
+            const text = document.getElementById('modalText');
+            text.textContent = JSON.stringify(data, null, 2);
+            modal.style.display = 'flex';
+        }
+        function closeInfoModal() {
+            document.getElementById('infoModal').style.display = 'none';
+        }
+
+        function handleResize() { setContainerHeight(); resizeCanvas(); }
+        window.addEventListener('load', init);
+        window.addEventListener('resize', handleResize);
+    </script>
+</body>
+</html>
