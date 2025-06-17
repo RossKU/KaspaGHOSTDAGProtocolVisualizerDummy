@@ -1,0 +1,982 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kaspa GHOSTDAG Protocol Visualizer</title>
+    <style>
+        :root {
+            --bg-color: #f6f8fa;
+            --text-color: #24292f;
+            --header-bg: #ffffff;
+            --border-color: #d1d9e0;
+            --subtitle-color: #57606a;
+            --panel-bg: #ffffff;
+            --canvas-line-color: #8b949e;
+            --btn-bg: #0969da;
+            --btn-hover-bg: #0860ca;
+            --btn-disabled-bg: #8b949e;
+            --block-blue-bg: #0969da;
+            --block-red-bg: #cf222e;
+            --block-none-bg: #8b949e;
+            --vc-highlight-shadow: rgba(9, 105, 218, 0.5);
+            --vc-highlight-bg: #0550ae;
+            --vc-line-color: #0969da;
+        }
+
+        body.dark-mode {
+            --bg-color: #0d1117;
+            --text-color: #c9d1d9;
+            --header-bg: #161b22;
+            --border-color: #30363d;
+            --subtitle-color: #8b949e;
+            --panel-bg: #161b22;
+            --canvas-line-color: #484f58;
+            /* 【修正点】ボタンの色を青に維持 */
+            --btn-bg: #0969da;
+            --btn-hover-bg: #0860ca;
+            --btn-disabled-bg: #57606a;
+            --block-blue-bg: #218bff;
+            --block-red-bg: #f85149;
+            --block-none-bg: #57606a;
+            --vc-highlight-shadow: rgba(56, 139, 253, 0.5);
+            --vc-highlight-bg: #1f6feb;
+            --vc-line-color: #388bfd;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body { height: 100%; overflow: hidden; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color); 
+            color: var(--text-color);
+            transition: background-color 0.3s, color 0.3s;
+        }
+        .container { width: 100%; display: flex; flex-direction: column; position: relative; }
+        .header {
+            text-align: center; padding: 20px 0; 
+            background: var(--header-bg);
+            border-bottom: 1px solid var(--border-color);
+            position: relative; /* ★★★ 変更点: ロゴの絶対位置指定の基準点にする ★★★ */
+        }
+        .header h1 { font-size: 24px; font-weight: 600; margin-bottom: 5px; }
+        .header .subtitle { color: var(--subtitle-color); font-size: 14px; }
+        /* ★★★ 変更点: ロゴを右上に絶対配置し、サイズを大きくする ★★★ */
+        .header-logo {
+            position: absolute;
+            top: 50%;
+            right: 30px;
+            transform: translateY(-50%);
+            width: 64px;
+            height: 64px;
+        }
+        .visualization { flex: 1; position: relative; overflow: hidden; background: var(--header-bg); }
+        .zone-labels {
+            position: absolute; top: 20px; left: 0; right: 0;
+            display: flex; justify-content: space-between;
+            padding: 0 50px; z-index: 10;
+        }
+        .zone-label { color: var(--subtitle-color); font-size: 12px; font-weight: 500; }
+        .canvas-container { position: absolute; top: 60px; left: 0; right: 0; bottom: 100px; }
+        .block {
+            position: absolute; border-radius: 6px;
+            display: flex; align-items: center; justify-content: center;
+            color: white; font-weight: 600; cursor: pointer;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1); z-index: 5;
+            transition: transform 0.3s, width 0.3s, height 0.3s, background-color 0.5s;
+            text-align: center; white-space: pre-wrap;
+            word-break: break-all; font-size: 10px; line-height: 1.1;
+        }
+        .block.blue { background: var(--block-blue-bg); }
+        .block.red { background: var(--block-red-bg); }
+        .block.none { background-color: var(--block-none-bg); }
+        .block.virtual-chain {
+            box-shadow: 0 0 20px var(--vc-highlight-shadow);
+            background-color: var(--vc-highlight-bg);
+        }
+        .block:hover { transform: scale(1.05); z-index: 10; }
+        #dagCanvas, #virtualCanvas { position: absolute; top: 0; left: 0; pointer-events: none; }
+        #dagCanvas { z-index: 1; }
+        #virtualCanvas { z-index: 2; }
+        .daa-score {
+            position: absolute; color: var(--subtitle-color); text-align: center;
+            z-index: 3; transform: translateX(-50%); font-size: 10px;
+        }
+        .stats-panel {
+            position: absolute; bottom: 20px; left: 20px; 
+            background: var(--panel-bg);
+            border: 1px solid var(--border-color); 
+            border-radius: 6px; padding: 15px;
+            min-width: 200px; z-index: 10;
+        }
+        .stats-title { color: var(--subtitle-color); font-size: 11px; font-weight: 500; margin-bottom: 10px; }
+        .stat-item { color: var(--subtitle-color); font-size: 10px; margin-bottom: 5px; }
+        .stat-value { color: var(--block-blue-bg); font-weight: 600; }
+        .controls { position: absolute; bottom: 20px; right: 20px; z-index: 10; }
+        button {
+            background: var(--btn-bg); color: white; border: none; padding: 8px 16px;
+            border-radius: 6px; font-size: 14px; cursor: pointer; margin: 0 5px;
+            transition: background 0.2s; min-width: 40px;
+        }
+        button:hover { background: var(--btn-hover-bg); }
+        button:disabled { background: var(--btn-disabled-bg); cursor: not-allowed; }
+        .fade-in { animation: fadeIn 0.3s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: scale(0.8); } to { opacity: 1; transform: scale(1); } }
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5); z-index: 1000;
+            display: none; justify-content: center; align-items: center;
+        }
+        .modal-content {
+            background: var(--panel-bg); 
+            padding: 20px; border-radius: 8px;
+            max-width: 90%; max-height: 90%; overflow: auto;
+            font-family: 'Courier New', Courier, monospace;
+        }
+    </style>
+</head>
+<body>
+    <div class="container" id="mainContainer">
+        <div class="header">
+            <!-- ★★★ 変更点: タイトルコンテナを削除し、h1を直接配置 ★★★ -->
+            <h1>Kaspa GHOSTDAG Protocol Visualizer</h1>
+            <p class="subtitle">10 BPS</p>
+            
+            <!-- ★★★ 変更点: ロゴをヘッダーの直下に配置 ★★★ -->
+            <svg class="header-logo" xmlns="http://www.w3.org/2000/svg" id="Layer_2" viewBox="0 0 197.05 196.86">
+              <defs>
+                <style>.cls-1{fill:none;}.cls-2{fill:#fff;}.cls-3{fill:#6fc7ba;}</style>
+              </defs>
+              <g id="Layer_1-2">
+                <g>
+                  <g>
+                    <circle class="cls-2" cx="98.52" cy="98.43" r="41.03"></circle>
+                    <path class="cls-3" d="m149.42,76.34c-2.8-6.76-7.22-13.03-12.32-18.12-5.08-5.1-11.61-8.91-18.38-11.71-6.51-2.71-13.78-4.07-21.28-4.07s-15.21.27-21.72,2.98c-6.76,2.8-12.42,8.12-17.51,13.22-5.1,5.1-11.02,10.51-13.82,17.26-2.71,6.53-1.83,14.48-1.83,21.99s.55,14.85,3.26,21.38c2.8,6.76,8.52,11.54,13.6,16.64,5.1,5.1,9.71,11.18,16.47,13.98,6.53,2.71,14.04,4.55,21.54,4.55s14.87-2.22,21.4-4.94c6.75-2.8,12.86-7.18,17.96-12.27,5.1-5.1,9.19-11.32,12.01-18.08,2.7-6.51,5.79-13.76,5.79-21.26s-2.48-15-5.19-21.53Zm-36.26,53.49l-11.88-1.75,3.39-23-24.87,19.16-7.32-9.56,21.82-16.8-21.82-16.81,7.32-9.56,24.87,19.16-3.39-22.99,11.88-1.77,4.73,31.98-4.73,31.96Z"></path>
+                  </g>
+                  <rect class="cls-1" x=".09" y="-.09" width="196.86" height="197.05" transform="translate(196.96 -.09) rotate(90)"></rect>
+                </g>
+              </g>
+            </svg>
+        </div>
+        <div class="visualization">
+            <div class="zone-labels">
+                <span class="zone-label">LINEAR CHAIN</span>
+                <span class="zone-label">GHOSTDAG ORDERING</span>
+                <span class="zone-label">PARALLEL BLOCKS</span>
+            </div>
+            <div class="canvas-container" id="canvasContainer">
+                <canvas id="dagCanvas"></canvas>
+                <canvas id="virtualCanvas"></canvas>
+            </div>
+            <div class="stats-panel">
+                <div class="stats-title">NETWORK STATS</div>
+                <div class="stat-item">Block Rate: <span class="stat-value">10 BPS</span></div>
+                <div class="stat-item">Blue Score: <span class="stat-value" id="blueScore">...</span></div>
+                <div class="stat-item">DAA Score: <span class="stat-value" id="daaScore">...</span></div>
+                <div class="stat-item">Current BPS: <span class="stat-value" id="currentBPS">0</span></div>
+            </div>
+            <div class="controls">
+                <button onclick="toggleNightMode()" id="nightModeBtn">🌙</button>
+                <button onclick="toggleAnimation()" id="toggleBtn">Pause</button>
+                <button onclick="resetVisualization()">Reset</button>
+                <button onclick="zoomOut()" id="zoomOutBtn">-</button>
+                <button onclick="zoomIn()" id="zoomInBtn">+</button>
+            </div>
+        </div>
+        <div class="modal-overlay" id="infoModal" onclick="closeInfoModal()">
+            <div class="modal-content" onclick="event.stopPropagation()">
+                <pre id="modalText"></pre>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        const serverSimulator = {
+            allBlocks: new Map(),
+            lastDeliveredBlueScore: 0,
+            pendingUpdates: new Map(),
+            blueScoreCounter: 0,
+            daaScoreCounter: 0,
+            generationInterval: null,
+            LOCKED_VCHAIN_COUNT: 6,
+            MAX_BLOCKS: 50,
+
+            start() {
+                if (!this.generationInterval) {
+                    this.generationInterval = setInterval(() => this._internalTick(), 500);
+                }
+            },
+            stop() {
+                clearInterval(this.generationInterval);
+                this.generationInterval = null;
+            },
+            reset() {
+                this.stop();
+                this.allBlocks.clear();
+                this.pendingUpdates.clear();
+                this.lastDeliveredBlueScore = 0;
+                this.blueScoreCounter = 0;
+                this.daaScoreCounter = 0;
+                this.start();
+            },
+
+            async fetchData() {
+                const newBlocks = [];
+                this.allBlocks.forEach(block => {
+                    if (block.blueScore > this.lastDeliveredBlueScore) {
+                        newBlocks.push(block);
+                    }
+                });
+
+                newBlocks.forEach(blockInfo => {
+                     const serverBlock = this.allBlocks.get(blockInfo.hash);
+                     if(serverBlock && serverBlock.color === 'none'){
+                         serverBlock.color = Math.random() > 0.01 ? 'blue' : 'red';
+                         this.pendingUpdates.set(serverBlock.hash, {...serverBlock});
+                     }
+                });
+
+                const updatedBlocks = Array.from(this.pendingUpdates.values());
+                this.pendingUpdates.clear();
+                
+                this.lastDeliveredBlueScore = this.blueScoreCounter;
+
+                return {
+                    newBlocks: newBlocks.map(b => this.allBlocks.get(b.hash)),
+                    updatedBlocks,
+                    latestBlueScore: this.blueScoreCounter
+                };
+            },
+
+            _internalTick() {
+                this._generateNewBlocks();
+                this._calculateVirtualChain();
+                this._pruneOldBlocks();
+            },
+            
+            _calculateVirtualChain() {
+                if (this.allBlocks.size === 0) return;
+                
+                if (this.allBlocks.size === 1) {
+                    const genesis = this.allBlocks.values().next().value;
+                    if (!genesis.isVirtualChain) {
+                        genesis.isVirtualChain = true;
+                        this.pendingUpdates.set(genesis.hash, { ...genesis });
+                    }
+                    return;
+                }
+                
+                const virtualChainBlocks = Array.from(this.allBlocks.values())
+                    .filter(b => b.isVirtualChain)
+                    .sort((a, b) => a.blueScore - b.blueScore);
+                
+                const lockedVChainBlocks = virtualChainBlocks.slice(0, this.LOCKED_VCHAIN_COUNT);
+
+                virtualChainBlocks.forEach(b => {
+                    if (!lockedVChainBlocks.includes(b)) {
+                        if (b.isVirtualChain) {
+                            b.isVirtualChain = false;
+                            this.pendingUpdates.set(b.hash, { ...b });
+                        }
+                    }
+                });
+
+                let chainHead = lockedVChainBlocks[lockedVChainBlocks.length - 1] || virtualChainBlocks[0];
+                if (!chainHead) {
+                    const blueBlocks = Array.from(this.allBlocks.values()).filter(b => b.color === 'blue');
+                    if(blueBlocks.length === 0) return;
+                    chainHead = blueBlocks.sort((a, b) => this._compareBlocks(a,b))[0];
+                }
+
+                while (true) {
+                    const children = [];
+                    this.allBlocks.forEach(block => {
+                        if (block.parentHashes.includes(chainHead.hash)) children.push(block);
+                    });
+                    
+                    const blueChildren = children.filter(c => c.color === 'blue');
+                    if (blueChildren.length === 0) break;
+
+                    blueChildren.sort((a, b) => this._compareBlocks(b, a));
+                    const bestChild = blueChildren[0]; 
+
+                    if (!bestChild.isVirtualChain) {
+                        bestChild.isVirtualChain = true;
+                        this.pendingUpdates.set(bestChild.hash, { ...bestChild });
+                    }
+                    chainHead = bestChild;
+                }
+
+                const finalVirtualBlocks = Array.from(this.allBlocks.values()).filter(b => b.isVirtualChain);
+                if (finalVirtualBlocks.length === 0) {
+                    const allBlueBlocks = Array.from(this.allBlocks.values()).filter(b => b.color === 'blue');
+                    if (allBlueBlocks.length > 0) {
+                        allBlueBlocks.sort((a, b) => this._compareBlocks(b, a));
+                        const newGenesis = allBlueBlocks[0];
+                        if (!newGenesis.isVirtualChain) {
+                            newGenesis.isVirtualChain = true;
+                            this.pendingUpdates.set(newGenesis.hash, { ...newGenesis });
+                        }
+                    }
+                }
+            },
+
+            _compareBlocks(a, b) {
+                if (a.blueScore !== b.blueScore) return a.blueScore - b.blueScore;
+                if (a.parentHashes.length !== b.parentHashes.length) return a.parentHashes.length - b.parentHashes.length;
+                return b.hash.localeCompare(a.hash);
+            },
+            
+            _pruneOldBlocks() {
+                if (this.allBlocks.size <= this.MAX_BLOCKS) return;
+                const sortedBlocks = Array.from(this.allBlocks.values()).sort((a, b) => a.blueScore - b.blueScore);
+                const lockedHashes = new Set(
+                    Array.from(this.allBlocks.values())
+                    .filter(b => b.isVirtualChain)
+                    .sort((a, b) => b.blueScore - a.blueScore)
+                    .slice(0, this.LOCKED_VCHAIN_COUNT)
+                    .map(b => b.hash)
+                );
+                let deletedCount = 0;
+                for (const block of sortedBlocks) {
+                    if (this.allBlocks.size - deletedCount <= this.MAX_BLOCKS) break;
+                    if (!lockedHashes.has(block.hash)) {
+                        this.allBlocks.delete(block.hash);
+                        deletedCount++;
+                    }
+                }
+            },
+
+            _generateNewBlocks() {
+                for (let i = 0; i < 5; i++) {
+                    const parentHashes = this._selectParents();
+                    if (this.allBlocks.size > 0 && parentHashes.length === 0) continue;
+                    const hash = this._generateHash();
+                    this.blueScoreCounter++;
+                    this.daaScoreCounter += 10;
+                    const newBlock = {
+                        hash, parentHashes,
+                        blueScore: this.blueScoreCounter,
+                        daaScore: this.daaScoreCounter,
+                        color: "none",
+                        isVirtualChain: false
+                    };
+                    this.allBlocks.set(hash, newBlock);
+                }
+            },
+
+            _selectParents() {
+                const parentHashes = [];
+                const allHashes = Array.from(this.allBlocks.keys());
+                if (allHashes.length === 0) return [];
+                const parentCount = Math.floor(Math.random() * 9) + 4;
+                for (let i = 0; i < parentCount; i++) {
+                    const parentHash = allHashes[Math.floor(Math.random() * allHashes.length)];
+                    if (!parentHashes.includes(parentHash)) parentHashes.push(parentHash);
+                }
+                return parentHashes;
+            },
+            
+            _generateHash: () => [...Array(64)].map(() => Math.floor(Math.random() * 16).toString(16)).join(''),
+        };
+
+        let blocks = [], daaScores = [];
+        let animationRunning = true;
+        let canvas, ctx, virtualCanvas, vCtx;
+        let containerWidth, containerHeight, centerY;
+        let blocksThisSecond = 0, secondTimer = Date.now();
+        let dataFetchInterval, drawInterval, animationLoopId, statsUpdateInterval;
+        let blockCache = [];
+        let removedBlockCache = new Map();
+        let blueScore = 0, daaScore = 0;
+        
+        let lastTimestamp = 0;
+
+        let zoomLevel = 1.0;
+        const ZOOM_STEP = 0.2, MIN_ZOOM = 0.4, MAX_ZOOM = 1.6;
+        const BASE_BLOCK_SIZE = 50, BASE_VIRTUAL_BLOCK_SIZE = 70;
+        const BASE_FONT_SIZE = 10;
+
+        const SLIDE_SPEED_PER_SECOND = 50;
+        const Y_SMOOTHING_FACTOR = 1.25;
+        
+        const BASE_MIN_DISTANCE_X = 120, GUARANTEED_MIN_DISTANCE = 120;
+        const BASE_LINE_WIDTH = 1.5;
+        let zones = { parallel: { start: 0.7, end: 1.0 }, transform: { start: 0.4, end: 0.7 }, linear: { start: 0, end: 0.4 } };
+        
+        function setContainerHeight() { document.getElementById('mainContainer').style.height = `${window.innerHeight}px`; }
+
+        function init() {
+            setContainerHeight();
+            canvas = document.getElementById('dagCanvas'); ctx = canvas.getContext('2d');
+            virtualCanvas = document.getElementById('virtualCanvas'); vCtx = virtualCanvas.getContext('2d');
+            resizeCanvas();
+            startDataFetching();
+            updateZoomButtons();
+            
+            if (localStorage.getItem('nightMode') === 'enabled') {
+                document.body.classList.add('dark-mode');
+                document.getElementById('nightModeBtn').textContent = '☀️';
+            }
+
+            lastTimestamp = performance.now();
+            animate();
+        }
+        
+        function resizeCanvas() {
+            const container = document.getElementById('canvasContainer');
+            containerWidth = container.clientWidth; containerHeight = container.clientHeight;
+            centerY = containerHeight / 2;
+            canvas.width = containerWidth; canvas.height = containerHeight;
+            virtualCanvas.width = containerWidth; virtualCanvas.height = containerHeight;
+        }
+        
+        class Block {
+            constructor(internalBlockData) {
+                this.raw_data = internalBlockData;
+                this.id = internalBlockData.hash;
+                this.parentHashes = internalBlockData.parentHashes;
+                this.color = internalBlockData.color;
+                this.isVirtualChain = internalBlockData.isVirtualChain;
+                this.parents = [];
+                this.daaScore = internalBlockData.daaScore;
+                this.daaLabelAdded = false;
+                this.element = null;
+                this.velocity_multiplier = 1.0;
+                this.displayText = "";
+                this.y = internalBlockData.y;
+                this.x = internalBlockData.x;
+            }
+            
+            getZone() {
+                const relativeX = this.x / containerWidth;
+                if (relativeX > zones.parallel.start) return 'parallel';
+                if (relativeX > zones.transform.start) return 'transform';
+                return 'linear';
+            }
+            
+            createElement() {
+                const div = document.createElement('div');
+                div.className = `block ${this.color} fade-in`;
+                div.id = `block-${this.id}`;
+                this.element = div;
+                this.updateStyle();
+                document.getElementById('canvasContainer').appendChild(div);
+                this.element.addEventListener('click', () => showInfoModal(this.raw_data));
+            }
+
+            updateDisplayText() {
+                if (zoomLevel <= MIN_ZOOM) { this.displayText = ""; return; }
+                const padding = 8 * zoomLevel; 
+                const size = (this.isVirtualChain ? BASE_VIRTUAL_BLOCK_SIZE : BASE_BLOCK_SIZE) * zoomLevel;
+                const effectiveWidth = Math.max(0, size - padding * 2);
+                const charWidth = BASE_FONT_SIZE * 0.6;
+                const charsPerLine = Math.floor(effectiveWidth / charWidth);
+                if (charsPerLine <= 2) { this.displayText = ""; return; }
+                const maxLines = Math.floor(Math.max(0, size - padding * 2) / (BASE_FONT_SIZE * 1.1));
+                if (maxLines <= 0) { this.displayText = ""; return; }
+                const totalChars = Math.min(this.id.length, charsPerLine * maxLines);
+                let text = this.id.substring(0, totalChars);
+                let result = "";
+                for (let i = 0; i < totalChars; i += charsPerLine) {
+                    result += text.substring(i, i + charsPerLine) + '\n';
+                }
+                this.displayText = result.trim();
+            }
+            
+            updateStyle() {
+                if (!this.element) return;
+                this.updateDisplayText();
+                this.element.innerText = this.displayText;
+                this.element.classList.remove('blue', 'red', 'none');
+                this.element.classList.add(this.color);
+                if (this.isVirtualChain) this.element.classList.add('virtual-chain');
+                else this.element.classList.remove('virtual-chain');
+                const size = (this.isVirtualChain ? BASE_VIRTUAL_BLOCK_SIZE : BASE_BLOCK_SIZE) * zoomLevel;
+                this.element.style.width = `${size}px`; this.element.style.height = `${size}px`;
+                this.element.style.padding = `${8 * zoomLevel}px`;
+                this.element.style.fontSize = `${BASE_FONT_SIZE}px`;
+                this.element.style.left = `${this.x}px`; this.element.style.top = `${this.y}px`;
+            }
+
+            updatePosition(deltaTime) {
+                const totalVelocityX = SLIDE_SPEED_PER_SECOND * zoomLevel * this.velocity_multiplier;
+                this.x -= totalVelocityX * deltaTime;
+
+                const prevZone = this.zone;
+                this.zone = this.getZone();
+                const size = (this.isVirtualChain ? BASE_VIRTUAL_BLOCK_SIZE : BASE_BLOCK_SIZE) * zoomLevel;
+                const isBlueish = this.color === 'blue' || this.color === 'none';
+                if (prevZone !== this.zone) {
+                    if (this.zone === 'transform') {
+                        if (isBlueish) this.targetY = centerY - size / 2; else this.targetY = centerY + 150;
+                    }
+                    if (this.zone === 'linear' && isBlueish && !this.daaLabelAdded) {
+                        daaScores.push(new DAAScoreLabel(this.daaScore, this));
+                        this.daaLabelAdded = true;
+                    }
+                }
+                
+                if (Math.abs(this.y - this.targetY) > 1) {
+                    this.y += (this.targetY - this.y) * (1 - Math.exp(-Y_SMOOTHING_FACTOR * deltaTime));
+                }
+
+                if (this.zone === 'linear' && isBlueish) this.targetY = centerY - size / 2;
+                if (this.element) this.updateStyle();
+            }
+            
+            getCenterX() { return this.x + ((this.isVirtualChain ? BASE_VIRTUAL_BLOCK_SIZE : BASE_BLOCK_SIZE) * zoomLevel) / 2; }
+            getCenterY() { return this.y + ((this.isVirtualChain ? BASE_VIRTUAL_BLOCK_SIZE : BASE_BLOCK_SIZE) * zoomLevel) / 2; }
+            
+            remove() { if (this.element) this.element.remove(); }
+        }
+        
+        class DAAScoreLabel {
+            constructor(score, targetBlock) {
+                this.score = score; this.targetBlock = targetBlock; this.element = null;
+                const interval = Math.max(1, Math.round(2 / zoomLevel));
+                this.isVisible = (daaScores.length % interval === 0);
+                this.createElement();
+            }
+            createElement() {
+                const div = document.createElement('div');
+                div.className = 'daa-score';
+                div.textContent = this.score.toLocaleString();
+                if (!this.isVisible) div.style.display = 'none';
+                this.element = div; this.updatePosition();
+                document.getElementById('canvasContainer').appendChild(div);
+            }
+            updatePosition() {
+                if (this.targetBlock && this.element) {
+                    this.element.style.left = `${this.targetBlock.getCenterX()}px`;
+                    this.element.style.top = `${containerHeight - 80}px`;
+                }
+            }
+            remove() { if (this.element) this.element.remove(); }
+        }
+        
+        async function fetchAndProcessData() {
+            try {
+                const data = await serverSimulator.fetchData();
+                processIncomingData(data);
+            } catch (error) {
+                console.error("Failed to fetch data:", error);
+            }
+        }
+        
+        function processIncomingData(data) {
+            if (animationRunning) {
+                data.updatedBlocks.forEach(updatedBlock => {
+                    const blockToUpdate = blocks.find(b => b.id === updatedBlock.hash);
+                    if (blockToUpdate) {
+                        blockToUpdate.color = updatedBlock.color;
+                        blockToUpdate.isVirtualChain = updatedBlock.isVirtualChain;
+                        Object.assign(blockToUpdate.raw_data, updatedBlock);
+                    }
+                });
+            }
+            const newInternalBlocks = data.newBlocks.map(apiBlock => ({ ...apiBlock }));
+            blockCache.push(...newInternalBlocks);
+        }
+
+        function processNewBlocksFromCache() {
+            if (!animationRunning) {
+                blockCache = [];
+                return;
+            }
+
+            if (blockCache.length === 0) return;
+            blockCache.sort((a,b) => a.blueScore - b.blueScore);
+            const blocksToProcess = blockCache.splice(0, 5);
+            const newBlockInstances = [];
+            const newBlockMap = new Map();
+            const topMargin = containerHeight * 0.025;
+            const spawnAreaStartY = topMargin;
+            const spawnAreaHeight = containerHeight - (topMargin * 2);
+            const spawnAreaWidth = 200;
+
+            blocksToProcess.forEach(internalBlockData => {
+                if (blocks.some(b => b.id === internalBlockData.hash)) return;
+                internalBlockData.y = spawnAreaStartY + Math.random() * spawnAreaHeight;
+                internalBlockData.x = containerWidth - 50 - Math.random() * spawnAreaWidth;
+                const newBlock = new Block(internalBlockData);
+                newBlockInstances.push(newBlock);
+                newBlockMap.set(newBlock.id, newBlock);
+            });
+
+            newBlockInstances.forEach(childBlock => {
+                let maxParentX = -1;
+                childBlock.parentHashes.forEach(parentHash => {
+                    const parentBlock = newBlockMap.get(parentHash);
+                    if (parentBlock) {
+                        maxParentX = Math.max(maxParentX, parentBlock.x);
+                    }
+                });
+                if (maxParentX > -1 && childBlock.x <= maxParentX) {
+                    childBlock.x = maxParentX + BASE_BLOCK_SIZE * zoomLevel + 20;
+                }
+                childBlock.x = Math.min(childBlock.x, containerWidth - BASE_BLOCK_SIZE * zoomLevel);
+            });
+            
+            blocks.push(...newBlockInstances);
+            blocks.forEach(b => { 
+                if (b.parents.length !== b.parentHashes.length) {
+                    b.parents = b.parentHashes.map(hash => blocks.find(p => p.id === hash)).filter(p => p);
+                }
+             });
+            newBlockInstances.forEach(b => b.createElement());
+            updateScoreStats(newBlockInstances);
+            blocksThisSecond += newBlockInstances.length;
+        }
+
+        function startDataFetching() {
+            serverSimulator.start();
+            dataFetchInterval = setInterval(fetchAndProcessData, 2000);
+            drawInterval = setInterval(processNewBlocksFromCache, 500);
+            statsUpdateInterval = setInterval(updateBpsDisplay, 1000);
+        }
+        
+        function applyDagConstraints() {
+            blocks.forEach(b => b.velocity_multiplier = 1.0);
+
+            for(let i=0; i < blocks.length; i++) {
+                for(let j=i+1; j < blocks.length; j++) {
+                    const blockA = blocks[i];
+                    const blockB = blocks[j];
+                    let aShouldBeFirst = false;
+
+                    if (blockB.parents.includes(blockA)) {
+                        aShouldBeFirst = true;
+                    } else if (blockA.parents.includes(blockB)) {
+                        aShouldBeFirst = false;
+                    } else {
+                        aShouldBeFirst = blockA.raw_data.blueScore <= blockB.raw_data.blueScore;
+                    }
+
+                    const aIsFirstSpatially = blockA.x < blockB.x;
+
+                    if (aShouldBeFirst && !aIsFirstSpatially) {
+                        blockA.velocity_multiplier = 1.8;
+                        blockB.velocity_multiplier = 0.2;
+                    } else if (!aIsFirstSpatially && aIsFirstSpatially) {
+                        blockB.velocity_multiplier = 1.8;
+                        blockA.velocity_multiplier = 0.2;
+                    } else {
+                        const dx = blockA.x - blockB.x;
+                        const dy = blockA.y - blockB.y;
+                        if (Math.abs(dy) < 60 * zoomLevel) {
+                            const dist = GUARANTEED_MIN_DISTANCE * zoomLevel;
+                            if (Math.abs(dx) < dist) {
+                                const overlap = dist - Math.abs(dx);
+                                const correction = overlap * 0.1;
+                                if(aIsFirstSpatially) {
+                                    blockA.x -= correction;
+                                } else {
+                                    blockB.x -= correction;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        function applyOvertakeNudge() {
+            const orderingZoneBoundary = containerWidth * zones.parallel.start;
+            for (let i = 0; i < blocks.length; i++) {
+                for (let j = i + 1; j < blocks.length; j++) {
+                    const blockA = blocks[i];
+                    const blockB = blocks[j];
+
+                    if (blockA.x > orderingZoneBoundary || blockB.x > orderingZoneBoundary) continue;
+                    if (Math.abs(blockA.x - blockB.x) >= 10) continue;
+
+                    let aShouldBeFirst = false;
+                    if (blockB.parents.includes(blockA)) {
+                        aShouldBeFirst = true;
+                    } else if (blockA.parents.includes(blockB)) {
+                        aShouldBeFirst = false;
+                    } else {
+                        aShouldBeFirst = blockA.raw_data.blueScore <= blockB.raw_data.blueScore;
+                    }
+                    
+                    const aIsFirstSpatially = blockA.x < blockB.x;
+
+                    if (aShouldBeFirst && !aIsFirstSpatially) {
+                        blockA.velocity_multiplier = 3.0;
+                        blockB.velocity_multiplier = 0.1;
+                    } else if (!aShouldBeFirst && aIsFirstSpatially) {
+                        blockB.velocity_multiplier = 3.0;
+                        blockA.velocity_multiplier = 0.1;
+                    }
+                }
+            }
+        }
+
+        function enforceParentChildSpacing(deltaTime) {
+            for (const child of blocks) {
+                for (const parent of child.parents) {
+                    if (!parent) continue;
+                    
+                    const isRedParent = parent.color === 'red';
+                    const MIN_SPACING = (isRedParent ? 30 : 10) * zoomLevel;
+                    
+                    if (parent.x > child.x - MIN_SPACING) {
+                        const targetX = child.x - MIN_SPACING;
+                        const diffX = parent.x - targetX;
+                        const requiredVelocity = diffX / 0.05; 
+                        parent.x -= requiredVelocity * deltaTime;
+                    }
+                }
+            }
+        }
+        
+        function animate(timestamp) {
+            animationLoopId = requestAnimationFrame(animate);
+            if (!animationRunning) {
+                lastTimestamp = timestamp;
+                return;
+            }
+            
+            const deltaTime = Math.min(0.05, (timestamp - lastTimestamp) / 1000);
+            lastTimestamp = timestamp;
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height); vCtx.clearRect(0, 0, virtualCanvas.width, virtualCanvas.height);
+            applyDagConstraints();
+            applyOvertakeNudge();
+            blocks.forEach(block => block.updatePosition(deltaTime)); 
+            enforceParentChildSpacing(deltaTime);
+            daaScores.forEach(score => score.updatePosition());
+            const removalThreshold = -500;
+            const blocksOnScreen = blocks.filter(b => b.x > removalThreshold);
+            if (blocksOnScreen.length < blocks.length) {
+                const blocksToRemove = blocks.filter(b => !blocksOnScreen.includes(b));
+                blocksToRemove.forEach(b => {
+                    removedBlockCache.set(b.id, { 
+                        x: b.getCenterX(), 
+                        y: b.getCenterY(), 
+                        isVirtualChain: b.isVirtualChain, 
+                        raw_data: b.raw_data 
+                    });
+                    b.remove();
+                });
+                blocks = blocksOnScreen;
+            }
+            daaScores = daaScores.filter(s => (s.targetBlock && blocks.includes(s.targetBlock)) || (s.remove(), false));
+            drawConnections();
+            drawVirtualChain();
+        }
+        
+        function drawConnections() {
+            const lineColor = getComputedStyle(document.body).getPropertyValue('--canvas-line-color');
+            ctx.strokeStyle = lineColor;
+            ctx.fillStyle = lineColor;
+            ctx.lineWidth = BASE_LINE_WIDTH * zoomLevel;
+            blocks.forEach(block => {
+                const sortedParents = [...block.parents].filter(p=>p).sort((a, b) => a.id.localeCompare(b.id));
+                const parentsToDraw = sortedParents.slice(0, 4);
+                
+                parentsToDraw.forEach(parent => {
+                    if (parent && parent.element) {
+                        let x1 = block.getCenterX(), y1 = block.getCenterY();
+                        let x2 = parent.getCenterX(), y2 = parent.getCenterY();
+                        const offset = 3;
+
+                        if (block.color === 'red') {
+                            x1 += offset;
+                        }
+                        if (parent.color === 'red') {
+                            x2 += offset;
+                        }
+                        
+                        ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+                        const angle = Math.atan2(y2 - y1, x2 - x1), len = 6 * zoomLevel;
+                        ctx.beginPath(); ctx.moveTo(x2, y2);
+                        ctx.lineTo(x2 - len * Math.cos(angle - Math.PI / 6), y2 - len * Math.sin(angle - Math.PI / 6));
+                        ctx.lineTo(x2 - len * Math.cos(angle + Math.PI / 6), y2 - len * Math.sin(angle + Math.PI / 6));
+                        ctx.closePath(); ctx.fill();
+                    }
+                });
+            });
+        }
+        
+        function drawVirtualChain() {
+            const virtualBlocks = blocks.filter(b => b.isVirtualChain);
+            if (virtualBlocks.length === 0) return;
+            vCtx.strokeStyle = getComputedStyle(document.body).getPropertyValue('--vc-line-color');
+            vCtx.lineWidth = 4 * zoomLevel; vCtx.globalAlpha = 0.8;
+            vCtx.beginPath();
+            
+            const parentToChildMap = new Map();
+            virtualBlocks.forEach(parentBlock => {
+                const virtualChildren = blocks.filter(child => 
+                    child.isVirtualChain && child.parentHashes.includes(parentBlock.id)
+                );
+                if (virtualChildren.length > 0) {
+                    const bestChild = virtualChildren.reduce((best, current) => 
+                        current.raw_data.blueScore > best.raw_data.blueScore ? current : best
+                    , virtualChildren[0]);
+                    parentToChildMap.set(parentBlock.id, bestChild.id);
+                }
+            });
+
+            virtualBlocks.forEach(childBlock => {
+                const virtualParentCandidates = [];
+                childBlock.parentHashes.forEach(parentHash => {
+                    const livingParent = blocks.find(p => p.id === parentHash);
+                    if (livingParent && livingParent.isVirtualChain) {
+                        virtualParentCandidates.push({
+                            id: livingParent.id,
+                            blueScore: livingParent.raw_data.blueScore,
+                            isLiving: true,
+                            obj: livingParent
+                        });
+                    } else if (removedBlockCache.has(parentHash)) {
+                        const removedParent = removedBlockCache.get(parentHash);
+                        if (removedParent.isVirtualChain) {
+                            virtualParentCandidates.push({
+                                id: parentHash,
+                                blueScore: removedParent.raw_data.blueScore,
+                                isLiving: false,
+                                obj: removedParent
+                            });
+                        }
+                    }
+                });
+
+                if (virtualParentCandidates.length > 0) {
+                    const bestParentCandidate = virtualParentCandidates.reduce((best, current) => 
+                        current.blueScore > best.blueScore ? current : best
+                    , virtualParentCandidates[0]);
+
+                    if (bestParentCandidate.isLiving) {
+                        if (parentToChildMap.get(bestParentCandidate.id) === childBlock.id) {
+                             const x1 = childBlock.getCenterX(), y1 = childBlock.getCenterY();
+                             const x2 = bestParentCandidate.obj.getCenterX(), y2 = bestParentCandidate.obj.getCenterY();
+                             vCtx.moveTo(x1, y1);
+                             vCtx.lineTo(x2, y2);
+                        }
+                    } else {
+                        const x1 = childBlock.getCenterX(), y1 = childBlock.getCenterY();
+                        const x2 = bestParentCandidate.obj.x, y2 = bestParentCandidate.obj.y;
+                        vCtx.moveTo(x1, y1);
+                        vCtx.lineTo(x2, y2);
+                    }
+                }
+            });
+            vCtx.stroke();
+            vCtx.globalAlpha = 1;
+        }
+        
+        function updateScoreStats(newBlockInstances) {
+            const newRawBlocks = newBlockInstances.map(b => b.raw_data);
+            if (newRawBlocks.length > 0) {
+                 blueScore = Math.max(blueScore, ...newRawBlocks.map(b => b.blueScore));
+                 daaScore = Math.max(daaScore, ...newRawBlocks.map(b => b.daaScore));
+                 document.getElementById('blueScore').textContent = blueScore.toLocaleString();
+                 document.getElementById('daaScore').textContent = daaScore.toLocaleString();
+            }
+        }
+        
+        function updateBpsDisplay() {
+            document.getElementById('currentBPS').textContent = blocksThisSecond;
+            blocksThisSecond = 0;
+        }
+
+        function applyZoom() {
+            const normalizedZoom = (zoomLevel - MIN_ZOOM) / (MAX_ZOOM - MIN_ZOOM);
+            const linearEnd = 0.2 + 0.4 * (1 - normalizedZoom);
+            const transformEnd = linearEnd + 0.3;
+            zones.linear.end = linearEnd;
+            zones.transform.start = linearEnd; zones.transform.end = transformEnd;
+            zones.parallel.start = transformEnd;
+            blocks.forEach(b => {
+                b.updateDisplayText();
+                b.updateStyle();
+            });
+            updateZoomButtons();
+        }
+
+        function zoomIn() { if (zoomLevel < MAX_ZOOM) { zoomLevel = Math.min(MAX_ZOOM, zoomLevel + ZOOM_STEP); applyZoom(); } }
+        function zoomOut() { if (zoomLevel > MIN_ZOOM) { zoomLevel = Math.max(MIN_ZOOM, zoomLevel - ZOOM_STEP); applyZoom(); } }
+        function updateZoomButtons() {
+            document.getElementById('zoomInBtn').disabled = zoomLevel >= MAX_ZOOM;
+            document.getElementById('zoomOutBtn').disabled = zoomLevel <= MIN_ZOOM;
+        }
+        
+        function toggleAnimation() {
+            animationRunning = !animationRunning;
+            if (animationRunning) {
+                document.getElementById('toggleBtn').textContent = 'Pause';
+                lastTimestamp = performance.now();
+                animationLoopId = requestAnimationFrame(animate);
+            } else {
+                document.getElementById('toggleBtn').textContent = 'Resume';
+                cancelAnimationFrame(animationLoopId);
+            }
+        }
+        
+        function resetVisualization() {
+            cancelAnimationFrame(animationLoopId);
+            serverSimulator.stop();
+            clearInterval(dataFetchInterval);
+            clearInterval(drawInterval);
+            clearInterval(statsUpdateInterval);
+            dataFetchInterval = null;
+            drawInterval = null;
+            statsUpdateInterval = null;
+
+            blocks.forEach(b => b.remove());
+            daaScores.forEach(s => s.remove());
+            blocks = [];
+            daaScores = [];
+            blockCache = [];
+            removedBlockCache.clear();
+            blueScore = 0;
+            daaScore = 0;
+            blocksThisSecond = 0;
+            serverSimulator.reset();
+            if (zoomLevel !== 1.0) {
+                zoomLevel = 1.0;
+                applyZoom();
+            }
+            updateScoreStats([]);
+            updateBpsDisplay();
+            
+            animationRunning = true;
+            document.getElementById('toggleBtn').textContent = 'Pause';
+            
+            startDataFetching();
+            lastTimestamp = performance.now();
+            animationLoopId = requestAnimationFrame(animate);
+        }
+        
+        function toggleNightMode() {
+            const body = document.body;
+            body.classList.toggle('dark-mode');
+            const nightModeBtn = document.getElementById('nightModeBtn');
+            if (body.classList.contains('dark-mode')) {
+                localStorage.setItem('nightMode', 'enabled');
+                nightModeBtn.textContent = '☀️';
+            } else {
+                localStorage.setItem('nightMode', 'disabled');
+                nightModeBtn.textContent = '🌙';
+            }
+        }
+
+        function showInfoModal(data) {
+            const modal = document.getElementById('infoModal');
+            const text = document.getElementById('modalText');
+            text.textContent = JSON.stringify(data, null, 2);
+            modal.style.display = 'flex';
+        }
+        function closeInfoModal() {
+            document.getElementById('infoModal').style.display = 'none';
+        }
+
+        function handleResize() { setContainerHeight(); resizeCanvas(); }
+        window.addEventListener('load', init);
+        window.addEventListener('resize', handleResize);
+    </script>
+</body>
+</html>
