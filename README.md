@@ -12,7 +12,6 @@ Unlike traditional blockchain visualizers, this project focuses on providing a *
 Experience the visualizer in action right in your browser. No installation required.
 
 **[➡️ Launch the Visualizer](https://htmlpreview.github.io/?https://github.com/RossKU/KaspaGHOSTDAGProtocolVisualizerDummy/blob/main/Live%20v0.2.2.html)** 
-*(Note: Please replace the URL with your actual GitHub Pages or preview link.)*
 
 ## Key Features
 
