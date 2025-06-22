@@ -768,7 +768,7 @@
             const otherBlocks = allBlocks
                 .filter(b => !b.isVirtualChain && b.color !== 'red')
                 .sort((a, b) => (b.sequence || 0) - (a.sequence || 0)); 
-            const limitedBlocks = otherBlocks.slice(0, 40);
+            const limitedBlocks = otherBlocks.slice(0, 60);
             blocksToDraw = [...new Set([...alwaysDrawBlocks, ...limitedBlocks])];
         }
 
