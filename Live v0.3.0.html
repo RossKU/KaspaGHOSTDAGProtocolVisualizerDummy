@@ -1,0 +1,1124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kaspa GHOSTDAG Protocol Visualizer</title>
+    <!--
+        Thank you for reading the HTML. This was created by RossK.
+        The purpose of this visualizer is to compute the GHOSTDAG Protocol as faithfully as possible.
+        We hope that reading the code will deepen your understanding.
+        Development and operation are done on a volunteer basis, but any donations would be greatly appreciated.
+
+        Kaspa Donation Address:
+        kaspa:qpevudxkrmsnpge5eq3vcghzva2n4zar5fxwy5qxhfcern0zvx9ykjw5xpk9n
+    -->
+    <style>
+        :root {
+            --bg-color: #f6f8fa;
+            --text-color: #24292f;
+            --header-bg: #ffffff;
+            --border-color: #d1d9e0;
+            --subtitle-color: #57606a;
+            --panel-bg: #ffffff;
+            --canvas-line-color: #8b949e;
+            --btn-bg: #0969da;
+            --btn-hover-bg: #0860ca;
+            --btn-disabled-bg: #8b949e;
+            --block-blue-bg: #0969da;
+            --block-red-bg: #cf222e;
+            --block-grey-bg: #8b949e;
+            --block-none-bg: #8b949e;
+            --vc-highlight-shadow: rgba(9, 105, 218, 0.5);
+            --vc-highlight-bg: #0550ae;
+            --vc-line-color: #0969da;
+        }
+
+        body.dark-mode {
+            --bg-color: #0d1117;
+            --text-color: #c9d1d9;
+            --header-bg: #161b22;
+            --border-color: #30363d;
+            --subtitle-color: #8b949e;
+            --panel-bg: #161b22;
+            --canvas-line-color: #484f58;
+            --btn-bg: #0969da;
+            --btn-hover-bg: #0860ca;
+            --btn-disabled-bg: #57606a;
+            --block-blue-bg: #218bff;
+            --block-red-bg: #f85149;
+            --block-grey-bg: #57606a;
+            --block-none-bg: #57606a;
+            --vc-highlight-shadow: rgba(56, 139, 253, 0.5);
+            --vc-highlight-bg: #1f6feb;
+            --vc-line-color: #388bfd;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body { height: 100%; overflow: hidden; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color); 
+            color: var(--text-color);
+            transition: background-color 0.3s, color 0.3s;
+        }
+        .container { width: 100%; display: flex; flex-direction: column; position: relative; }
+        .header {
+            text-align: center; padding: 20px 0; 
+            background: var(--header-bg);
+            border-bottom: 1px solid var(--border-color);
+            position: relative;
+            z-index: 20; 
+        }
+        .header h1 { font-size: 24px; font-weight: 600; margin-bottom: 5px; }
+        .header .subtitle { color: var(--subtitle-color); font-size: 14px; }
+        .header-logo, .header-logo-swapped {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            cursor: pointer;
+        }
+        .header-logo {
+            width: 96px;
+            height: 96px;
+            right: 7px;
+        }
+        .header-logo-swapped {
+            width: 54px;
+            height: 54px;
+            right: 30px; 
+            display: none;
+        }
+        body.dark-mode .header-logo-swapped {
+            filter: drop-shadow(0 0 4px white);
+        }
+
+        .visualization { flex: 1; position: relative; overflow: hidden; background: var(--header-bg); }
+        .zone-labels {
+            position: absolute; top: 20px; left: 0; right: 0;
+            display: flex; justify-content: space-between;
+            padding: 0 50px; z-index: 10;
+        }
+        .zone-label { color: var(--subtitle-color); font-size: 12px; font-weight: 500; }
+        .canvas-container { position: absolute; top: 60px; left: 0; right: 0; bottom: 100px; }
+        .block {
+            position: absolute; border-radius: 6px;
+            display: flex; align-items: center; justify-content: center;
+            color: white; font-weight: 600; cursor: pointer;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1); z-index: 5;
+            transition: transform 0.3s, width 0.3s, height 0.3s, background-color 0.5s;
+            text-align: center; white-space: pre-wrap;
+            word-break: break-all; font-size: 10px; line-height: 1.1;
+        }
+        .block.blue { background: var(--block-blue-bg); }
+        .block.red { background: var(--block-red-bg); }
+        .block.grey { background-color: var(--block-grey-bg); }
+        .block.none { background-color: var(--block-none-bg); }
+        .block.virtual-chain {
+            box-shadow: 0 0 20px var(--vc-highlight-shadow);
+            background-color: var(--vc-highlight-bg);
+        }
+        .block:hover { transform: scale(1.05); z-index: 10; }
+        #dagCanvas, #virtualCanvas { position: absolute; top: 0; left: 0; pointer-events: none; }
+        #dagCanvas { z-index: 1; }
+        #virtualCanvas { z-index: 2; }
+        .daa-score {
+            position: absolute; color: var(--subtitle-color); text-align: center;
+            z-index: 3; transform: translateX(-50%); font-size: 10px;
+        }
+        .stats-panel {
+            position: absolute; bottom: 20px; left: 20px; 
+            background: var(--panel-bg);
+            border: 1px solid var(--border-color); 
+            border-radius: 6px; padding: 15px;
+            width: 180px;
+            z-index: 10;
+            transition: width 0.2s ease-in-out;
+        }
+        .stats-title { color: var(--subtitle-color); font-size: 11px; font-weight: 500; margin-bottom: 10px; }
+        .stat-item { color: var(--subtitle-color); font-size: 10px; margin-bottom: 5px; }
+        .stat-value { color: var(--block-blue-bg); font-weight: 600; }
+        .controls { position: absolute; bottom: 20px; right: 20px; z-index: 10; display: flex; align-items: center; }
+        button {
+            background: var(--btn-bg); color: white; border: none; padding: 8px 16px;
+            border-radius: 6px; font-size: 14px; cursor: pointer; margin: 0 5px;
+            transition: background 0.2s; min-width: 40px;
+            display: flex; align-items: center; justify-content: center;
+        }
+        button:hover { background: var(--btn-hover-bg); }
+        button:disabled { background: var(--btn-disabled-bg); cursor: not-allowed; }
+        .fade-in { animation: fadeIn 0.3s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: scale(0.8); } to { opacity: 1; transform: scale(1); } }
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5); z-index: 1000;
+            display: none; justify-content: center; align-items: center;
+        }
+        .modal-content {
+            background: var(--panel-bg); 
+            padding: 20px; border-radius: 8px;
+            max-width: 90%; max-height: 90%; overflow: auto;
+            font-family: 'Courier New', Courier, monospace;
+        }
+
+        @media (max-width: 800px) {
+            .header-logo, .header-logo-swapped { display: none !important; }
+            .header h1 {
+                white-space: normal;
+                overflow: visible;
+                text-overflow: unset;
+                font-size: 21px;
+                padding: 0 15px;
+            }
+            .header .subtitle {
+                 padding: 0 15px;
+            }
+            .stats-panel {
+                min-width: unset;
+                right: auto;
+                max-width: calc(100% - 40px);
+            }
+            .controls { 
+                display: grid; 
+                grid-template-areas: "dark mode-toggle zoom-in" "pause reset zoom-out"; 
+                grid-template-columns: auto auto auto; 
+                gap: 8px; 
+                align-items: center; 
+            }
+            .controls button { margin: 0; }
+            #nightModeBtn { grid-area: dark; }
+            #processingModeBtn { grid-area: mode-toggle; }
+            #toggleBtn    { grid-area: pause; }
+            #resetBtn     { grid-area: reset; }
+            #zoomInBtn    { grid-area: zoom-in; }
+            #zoomOutBtn   { grid-area: zoom-out; }
+            .controls-separator { display: none; }
+        }
+
+        @media (max-height: 600px) {
+            .header, .stats-panel { display: none; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container" id="mainContainer">
+        <div class="header">
+            <h1>Kaspa GHOSTDAG Protocol Visualizer</h1>
+            <p class="subtitle">A Scalable Generalization of Nakamoto Consensus</p>
+            <svg id="original-logo" class="header-logo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 197.05 196.86" onclick="toggleLogo()">
+                <defs><style>.cls-1{fill:none;}.cls-2{fill:#fff;}.cls-3{fill:#6fc7ba;}</style></defs>
+                <g id="Layer_1-2"><g><g><circle class="cls-2" cx="98.52" cy="98.43" r="41.03"></circle><path class="cls-3" d="m149.42,76.34c-2.8-6.76-7.22-13.03-12.32-18.12-5.08-5.1-11.61-8.91-18.38-11.71-6.51-2.71-13.78-4.07-21.28-4.07s-15.21.27-21.72,2.98c-6.76,2.8-12.42,8.12-17.51,13.22-5.1,5.1-11.02,10.51-13.82,17.26-2.71,6.53-1.83,14.48-1.83,21.99s.55,14.85,3.26,21.38c2.8,6.76,8.52,11.54,13.6,16.64,5.1,5.1,9.71,11.18,16.47,13.98,6.53,2.71,14.04,4.55,21.54,4.55s14.87-2.22,21.4-4.94c6.75-2.8,12.86-7.18,17.96-12.27,5.1-5.1,9.19-11.32,12.01-18.08,2.7-6.51,5.79-13.76,5.79-21.26s-2.48-15-5.19-21.53Zm-36.26,53.49l-11.88-1.75,3.39-23-24.87,19.16-7.32-9.56,21.82-16.8-21.82-16.81,7.32-9.56,24.87,19.16-3.39-22.99,11.88-1.77,4.73,31.98-4.73,31.96Z"></path></g><rect class="cls-1" x=".09" y="-.09" width="196.86" height="197.05" transform="translate(196.96 -.09) rotate(90)"></rect></g></g>
+            </svg>
+            <svg id="swapped-logo" class="header-logo-swapped" version="1.0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 150.000000 150.000000" preserveAspectRatio="xMidYMid meet" onclick="toggleLogo()">
+                <g transform="translate(0.000000,150.000000) scale(0.100000,-0.100000)" fill="#000000" stroke="none"><circle cx="750" cy="750" r="750" fill="#ffffff"/><path d="M582 1420 c-229 -60 -416 -238 -488 -465 -55 -173 -41 -344 43 -515 88 -180 264 -320 458 -366 105 -24 286 -15 383 19 144 50 265 145 351 272 239 358 101 837 -295 1016 -134 61 -310 76 -452 39z m313 -65 c325 -82 529 -392 471 -715 -43 -238 -226 -435 -461 -495 -69 -18 -211 -20 -287 -4 -29 6 -90 28 -135 50 -201 96 -334 296 -350 524 -16 250 141 506 374 606 114 49 275 63 388 34z"/><path d="M1014 1222 c-22 -14 -35 -54 -49 -146 -23 -151 -58 -211 -102 -174 -9 7 -57 76 -108 154 -51 77 -100 144 -109 147 -27 11 -61 8 -74 -5 -26 -26 -12 -63 57 -155 169 -224 163 -249 -66 -272 -149 -14 -198 -39 -191 -98 5 -49 38 -51 212 -14 122 26 158 31 175 22 27 -15 27 -30 -3 -73 -13 -20 -36 -57 -52 -84 -16 -27 -56 -80 -89 -119 -118 -136 -128 -160 -80 -191 41 -27 74 -5 149 99 36 51 95 130 131 177 91 117 148 219 195 342 43 115 90 285 90 327 0 52 -49 88 -86 63z"/></g>
+            </svg>
+        </div>
+        <div class="visualization">
+            <div class="zone-labels">
+                <span class="zone-label">LINEAR CHAIN</span>
+                <span class="zone-label">GHOSTDAG ORDERING</span>
+                <span class="zone-label">PARALLEL BLOCKS</span>
+            </div>
+            <div class="canvas-container" id="canvasContainer">
+                <canvas id="dagCanvas"></canvas>
+                <canvas id="virtualCanvas"></canvas>
+            </div>
+            <div class="stats-panel" id="stats-panel">
+                <div class="stats-title">NETWORK STATS</div>
+                <div class="stat-item">API Status: <span class="stat-value" id="apiStatus" style="color:var(--subtitle-color);">Idle</span></div>
+                <div class="stat-item">Blue Score: <span class="stat-value" id="blueScore">...</span></div>
+                <div class="stat-item">DAA Score: <span class="stat-value" id="daaScore">...</span></div>
+                <div class="stat-item">Avg. BPS: <span class="stat-value" id="bps">0.0</span></div>
+                <div class="stat-item">Block Cache: <span class="stat-value" id="blockCacheCount">...</span></div>
+            </div>
+            <div class="controls" id="controls">
+                <button onclick="toggleNightMode()" id="nightModeBtn">🌙</button>
+                <button onclick="toggleProcessingMode()" id="processingModeBtn">Rx</button>
+                <span class="controls-separator" style="border-left: 1px solid var(--border-color); margin: 0 5px; height: 20px;"></span>
+                <button onclick="toggleAnimation()" id="toggleBtn">Pause</button>
+                <button onclick="resetVisualization()" id="resetBtn">Reset</button>
+                <button onclick="zoomOut()" id="zoomOutBtn">-</button>
+                <button onclick="zoomIn()" id="zoomInBtn">+</button>
+            </div>
+        </div>
+        <div class="modal-overlay" id="infoModal" onclick="closeInfoModal()">
+            <div class="modal-content" onclick="event.stopPropagation()">
+                <pre id="modalText"></pre>
+            </div>
+        </div>
+    </div>
+    
+    <script type="javascript/worker" id="ghostdag-worker">
+        // This script runs in a separate thread to handle heavy GHOSTDAG calculations
+        // without blocking the main UI thread, ensuring a smooth animation.
+
+        // --- GHOSTDAG Calculation Logic (moved from main thread) ---
+        
+        function selectBestParentByBlueWork(block) {
+            if (!block.parents || block.parents.length === 0) return null;
+            return block.parents.reduce((best, parent) => {
+                if (!parent) return best;
+                if (!best) return parent;
+                if (parent.blueWork > best.blueWork) return parent;
+                if (parent.blueWork === best.blueWork) return parent.id.localeCompare(best.id) < 0 ? parent : best;
+                return best;
+            }, null);
+        }
+
+        function getPast(startBlock, cache) {
+            if (cache.has(startBlock.id)) return cache.get(startBlock.id);
+            const past = new Set();
+            const queue = [...startBlock.parents];
+            const visited = new Set(queue.map(p => p.id));
+            while (queue.length > 0) {
+                const current = queue.shift();
+                if (!current) continue;
+                past.add(current);
+                for (const parent of current.parents) {
+                    if (parent && !visited.has(parent.id)) {
+                        visited.add(parent.id);
+                        queue.push(parent);
+                    }
+                }
+            }
+            cache.set(startBlock.id, past);
+            return past;
+        }
+
+        function getFuture(startBlock, allBlocks, pastCache) {
+            const future = new Set();
+            for (const block of allBlocks) {
+                if (block.id === startBlock.id) continue;
+                const blockPast = getPast(block, pastCache);
+                if (blockPast.has(startBlock)) future.add(block);
+            }
+            return future;
+        }
+        
+        function buildKCluster(anticone, pastCache, K) {
+            const kCluster = new Set();
+            const sortedAnticone = [...anticone].sort((a, b) => {
+                if (a.blueWork !== b.blueWork) return b.blueWork > a.blueWork ? 1 : -1;
+                return a.id.localeCompare(b.id);
+            });
+            for (const candidate of sortedAnticone) {
+                if (kCluster.size >= K) break;
+                let isInChildrenOfKCluster = false;
+                for (const kBlock of kCluster) {
+                    const kBlockFuture = getFuture(kBlock, sortedAnticone, pastCache);
+                    if (kBlockFuture.has(candidate)) {
+                        isInChildrenOfKCluster = true;
+                        break;
+                    }
+                }
+                if (!isInChildrenOfKCluster) kCluster.add(candidate);
+            }
+            return kCluster;
+        }
+
+        function calculateTotalAnticone(targetBlock, context, pastCache, futureCache) {
+            const anticone = new Set();
+            const targetBlockPast = getPast(targetBlock, pastCache);
+            if (!futureCache.has(targetBlock.id)) {
+                futureCache.set(targetBlock.id, getFuture(targetBlock, context, pastCache));
+            }
+            const targetBlockFuture = futureCache.get(targetBlock.id);
+            for (const otherBlock of context) {
+                if (targetBlock.id === otherBlock.id) continue;
+                if (!targetBlockPast.has(otherBlock) && !targetBlockFuture.has(otherBlock)) {
+                    anticone.add(otherBlock);
+                }
+            }
+            return anticone.size;
+        }
+
+        onmessage = (e) => {
+            const { blocks: blocksData, GHOSTDAG_K } = e.data;
+            if (!blocksData || blocksData.length === 0) return;
+
+            const blocksMap = new Map(blocksData.map(b => [b.id, b]));
+            blocksData.forEach(b => {
+                b.blueWork = BigInt(b.blueWork);
+                b.parents = b.parentHashes.map(hash => blocksMap.get(hash)).filter(p => p);
+            });
+
+            const virtualTip = blocksData.reduce((h, c) => (!h || c.blueWork > h.blueWork) ? c : h, null);
+            if (!virtualTip) return;
+
+            // 1. updateVirtualChain logic
+            blocksData.forEach(b => b.isVirtualChain = false);
+            let chainHead = virtualTip;
+            while (chainHead) {
+                chainHead.isVirtualChain = true;
+                if (chainHead.parents.length === 0) break;
+                const bestParent = selectBestParentByBlueWork(chainHead);
+                chainHead = bestParent;
+            }
+
+            // 2. updateVCParentsState logic
+            blocksData.forEach(b => b.isParentOfVC = false);
+            const virtualChainBlocks = blocksData.filter(b => b.isVirtualChain);
+            for (const vcBlock of virtualChainBlocks) {
+                for (const parent of vcBlock.parents) {
+                    if (parent && !parent.isVirtualChain) {
+                        parent.isParentOfVC = true;
+                    }
+                }
+            }
+            
+            // 3. updateColors logic
+            const pastCache = new Map();
+            const futureCache = new Map();
+            blocksData.forEach(b => b.color = 'grey');
+            const virtualTipPast = getPast(virtualTip, pastCache);
+            virtualTipPast.add(virtualTip);
+            
+            let kCluster = new Set();
+            const selectedParent = selectBestParentByBlueWork(virtualTip);
+
+            if (selectedParent) {
+                const selectedParentPast = getPast(selectedParent, pastCache);
+                selectedParentPast.add(selectedParent);
+                const anticone = new Set();
+                for (const block of virtualTipPast) {
+                    if (!selectedParentPast.has(block)) anticone.add(block);
+                }
+                kCluster = buildKCluster(anticone, pastCache, GHOSTDAG_K);
+            }
+            
+            const blueSet = new Set();
+            blocksData.forEach(b => { if (b.isVirtualChain || kCluster.has(b)) blueSet.add(b); });
+
+            for (const block of virtualTipPast) {
+                if (blueSet.has(block)) {
+                    block.color = 'blue';
+                } else {
+                    const totalAnticoneSize = calculateTotalAnticone(block, virtualTipPast, pastCache, futureCache);
+                    block.color = (totalAnticoneSize > GHOSTDAG_K) ? 'red' : 'blue';
+                }
+            }
+
+            const updatedBlocksData = blocksData.map(b => ({
+                id: b.id,
+                color: b.color,
+                isVirtualChain: b.isVirtualChain,
+                isParentOfVC: b.isParentOfVC
+            }));
+            
+            postMessage({ updatedBlocksData });
+        };
+    </script>
+
+    <script>
+        // --- Global Constants & State ---
+        const API_BASE_URL = 'https://api.kaspa.org';
+        const FETCH_INTERVAL = 3000;
+        const GHOSTDAG_K = 124;
+        const FAST_FORWARD_THRESHOLD = 200;
+        const PRUNING_SCORE_DIFFERENCE = 300; 
+
+        let isEngineRunning = false;
+        let fetchDataTimer;
+        let isResetting = false;
+        let lastKnownHash = null;
+        let allBlocksMaster = new Map();
+        let stopEngineTimer = null;
+
+        let pauseTimestamp = null;
+        let blocks = [], daaScores = [];
+        let animationRunning = true;
+        let canvas, ctx, virtualCanvas, vCtx;
+        let containerWidth, containerHeight, centerY;
+        let animationLoopId, statsUpdateInterval, ghostdagUpdateInterval;
+        let blockCache = [];
+        let ghostdagWorker;
+        
+        let blocksToDraw = [];
+        const dynamicParentLimit = 6;
+        let activeOvertakes = new Map();
+        let lastDaaLabelBlueScore = 0;
+        
+        const processingModes = ['Rx', 'Ts', 'DAA', 'Bs', 'Bw'];
+        const processingModeTitles = {
+            'Rx': 'Receive Order',
+            'Ts': 'Timestamp Order',
+            'DAA': 'DAA Score Order',
+            'Bs': 'Blue Score Order',
+            'Bw': 'Blue Work Order'
+        };
+        let processingMode = 'Rx'; 
+
+        let blockSequence = 0;
+        let blueScore = 0, daaScore = 0;
+        let lastTimestamp = 0;
+        let zoomLevel = 1.0;
+        const ZOOM_STEP = 0.2, MIN_ZOOM = 0.4, MAX_ZOOM = 1.6;
+        const BASE_BLOCK_SIZE = 50, BASE_VIRTUAL_BLOCK_SIZE = 70;
+        const BASE_FONT_SIZE = 10;
+        const SLIDE_SPEED_PER_SECOND = 50;
+        const Y_SMOOTHING_FACTOR = 1.25;
+        const GUARANTEED_MIN_DISTANCE = 120;
+        const BASE_LINE_WIDTH = 1.5;
+        let zones = { parallel: { start: 0.7, end: 1.0 }, transform: { start: 0.4, end: 0.7 }, linear: { start: 0, end: 0.4 } };
+        
+        let blocksDrawnInLastInterval = 0;
+        const MAX_BPS = 16;
+        const BASE_BPS = 10;
+        const BASE_CACHE_TARGET = 40;
+        let currentBPS = BASE_BPS;
+        let drawTimeout;
+
+        // --- API & Data Handling ---
+        const updateApiStatus = (message, color) => {
+            const apiStatus = document.getElementById('apiStatus');
+            if(apiStatus) {
+                apiStatus.textContent = message;
+                apiStatus.style.color = `var(${color})`;
+            }
+        };
+        
+        async function startEngine() {
+            if (isEngineRunning) return;
+            isEngineRunning = true;
+            updateApiStatus('Connecting...', '--subtitle-color');
+            try {
+                if (!lastKnownHash) {
+                    const response = await fetch(`${API_BASE_URL}/info/blockdag`);
+                    if (!response.ok) throw new Error('Failed to get initial BlockDAG info');
+                    const data = await response.json();
+                    lastKnownHash = data.virtualParentHashes[0];
+                }
+                updateApiStatus('Connected', '--block-blue-bg');
+                fetchDataLoop();
+            } catch (error) {
+                console.error("Initialization Error:", error);
+                updateApiStatus('Init Error', '--block-red-bg');
+                stopEngine();
+            }
+        }
+
+        function stopEngine() {
+            if (!isEngineRunning) return;
+            isEngineRunning = false;
+            clearTimeout(fetchDataTimer);
+            updateApiStatus('Stopped', '--subtitle-color');
+        }
+
+        async function fetchDataLoop() {
+            if (!isEngineRunning) return;
+            try {
+                const url = `${API_BASE_URL}/blocks?lowHash=${lastKnownHash}&includeBlocks=true&includeGHOSTDAGData=true`;
+                const response = await fetch(url);
+                if (!response.ok) throw new Error(`API Error: ${response.status}`);
+                const data = await response.json();
+                const newApiBlocks = data.blocks || [];
+                if (newApiBlocks.length > 0) {
+                    processApiData(newApiBlocks);
+                    lastKnownHash = newApiBlocks[newApiBlocks.length - 1].verboseData.hash;
+                }
+                updateApiStatus(`Active (${new Date().toLocaleTimeString()})`, '--block-blue-bg');
+            } catch (error) {
+                console.error("Fetch Loop Error:", error);
+                updateApiStatus('Fetch Error', '--block-red-bg');
+            } finally {
+                if (isEngineRunning) {
+                    fetchDataTimer = setTimeout(fetchDataLoop, FETCH_INTERVAL);
+                }
+            }
+        }
+        
+        function processApiData(apiBlocks) {
+            if (isResetting) return;
+            const newBlocksForCache = [];
+            apiBlocks.forEach(block => {
+                const hash = block.verboseData?.hash;
+                if (!hash || !block.header || !block.verboseData) return;
+                if (allBlocksMaster.has(hash)) return;
+                const processedBlock = {
+                    hash: hash,
+                    parentHashes: block.header.parents?.flatMap(p => p.parentHashes) ?? [],
+                    blueScore: parseInt(block.header.blueScore ?? 0),
+                    daaScore: parseInt(block.header.daaScore ?? 0),
+                    color: 'grey',
+                    isVirtualChain: false,
+                    rawApiData: block
+                };
+                allBlocksMaster.set(hash, processedBlock);
+                newBlocksForCache.push(processedBlock);
+                while (allBlocksMaster.size > 200) {
+                    const oldestKey = allBlocksMaster.keys().next().value;
+                    allBlocksMaster.delete(oldestKey);
+                }
+            });
+            if (newBlocksForCache.length > 0) {
+                const newBlocksWithSequence = newBlocksForCache.map(block => {
+                    block.sequence = blockSequence++;
+                    return block;
+                });
+                processIncomingData({ newBlocks: newBlocksWithSequence });
+            }
+        }
+
+        // --- Initialization ---
+        function setContainerHeight() { document.getElementById('mainContainer').style.height = `${window.innerHeight}px`; }
+
+        function init() {
+            setContainerHeight();
+            canvas = document.getElementById('dagCanvas'); ctx = canvas.getContext('2d');
+            virtualCanvas = document.getElementById('virtualCanvas'); vCtx = virtualCanvas.getContext('2d');
+            resizeCanvas();
+            updateZoomButtons();
+            
+            if (localStorage.getItem('nightMode') === 'enabled') {
+                document.body.classList.add('dark-mode');
+                document.getElementById('nightModeBtn').textContent = '☀️';
+            }
+            
+            const processingModeBtn = document.getElementById('processingModeBtn');
+            processingModeBtn.textContent = processingMode;
+            processingModeBtn.title = processingModeTitles[processingMode];
+
+            processNewBlocksFromCache(); 
+            statsUpdateInterval = setInterval(updateStatsDisplay, 1000);
+            
+            // Setup GHOSTDAG worker
+            if (window.Worker) {
+                const workerScript = document.getElementById('ghostdag-worker').textContent;
+                const blob = new Blob([workerScript], { type: 'application/javascript' });
+                ghostdagWorker = new Worker(URL.createObjectURL(blob));
+
+                ghostdagWorker.onmessage = (e) => {
+                    const { updatedBlocksData } = e.data;
+                    if (updatedBlocksData) {
+                        const blockMap = new Map(blocks.map(b => [b.id, b]));
+                        updatedBlocksData.forEach(updatedData => {
+                            const block = blockMap.get(updatedData.id);
+                            if (block) {
+                                const oldColor = block.color;
+                                block.color = updatedData.color;
+                                block.isVirtualChain = updatedData.isVirtualChain;
+                                block.isParentOfVC = updatedData.isParentOfVC;
+
+                                if (block.color === 'red' && oldColor !== 'red') {
+                                    setRedBlockTargetY(block);
+                                }
+                            }
+                        });
+                        updateDrawableBlocksList();
+                    }
+                };
+
+                ghostdagUpdateInterval = setInterval(() => {
+                    if (animationRunning && blocks.length > 0) {
+                        const unstatBlocks = blocks.filter(b => !b.scoreUpdated);
+                        if (unstatBlocks.length > 0) {
+                            updateScoreStats(unstatBlocks);
+                            unstatBlocks.forEach(b => b.scoreUpdated = true);
+                        }
+                        
+                        const blocksDataForWorker = blocks.map(b => ({
+                            id: b.id,
+                            parentHashes: b.parentHashes,
+                            blueWork: '0x' + b.blueWork.toString(16),
+                        }));
+
+                        ghostdagWorker.postMessage({ blocks: blocksDataForWorker, GHOSTDAG_K });
+                    }
+                }, 500); // Calculate GHOSTDAG every 0.5 seconds
+            }
+
+            lastTimestamp = performance.now();
+            animate();
+            startEngine();
+        }
+        
+        function resizeCanvas() {
+            const container = document.getElementById('canvasContainer');
+            containerWidth = container.clientWidth; containerHeight = container.clientHeight;
+            centerY = containerHeight / 2;
+            canvas.width = containerWidth; canvas.height = containerHeight;
+            virtualCanvas.width = containerWidth; virtualCanvas.height = containerHeight;
+            adjustLayout();
+        }
+        
+        // --- Block Class & Related Logic ---
+        class Block {
+            constructor(internalBlockData) {
+                this.raw_data = internalBlockData;
+                this.id = internalBlockData.hash;
+                this.parentHashes = internalBlockData.parentHashes;
+                this.color = internalBlockData.color;
+                this.isVirtualChain = internalBlockData.isVirtualChain;
+                this.isParentOfVC = false;
+                this.parents = [];
+                this.daaScore = internalBlockData.daaScore;
+                this.blueScore = internalBlockData.blueScore;
+                this.blueWork = BigInt('0x' + (internalBlockData.rawApiData?.header?.blueWork || '0'));
+                this.daaLabelAdded = false;
+                this.element = null;
+                this.velocity_multiplier = 1.0;
+                this.displayText = "";
+                this.y = internalBlockData.y;
+                this.x = internalBlockData.x;
+                this.targetY = null;
+                this.sequence = internalBlockData.sequence;
+                this.scoreUpdated = false;
+            }
+            
+            createElement() {
+                const div = document.createElement('div');
+                div.className = `block ${this.color} fade-in`;
+                div.id = `block-${this.id}`;
+                this.element = div;
+                this.updateStyle();
+                document.getElementById('canvasContainer').appendChild(div);
+                this.element.addEventListener('click', () => showInfoModal(this));
+            }
+
+            updateStyle() {
+                if (!this.element) return;
+                const isNowVisible = this.x > -100 && this.x < containerWidth + 100;
+                if (typeof this.isVisible === 'undefined') { this.isVisible = !isNowVisible; }
+                if (this.isVisible !== isNowVisible) {
+                    this.isVisible = isNowVisible;
+                    this.element.style.display = isNowVisible ? 'flex' : 'none';
+                }
+                if (!this.isVisible) return;
+
+                this.updateDisplayText();
+                this.element.innerText = this.displayText;
+                this.element.classList.remove('blue', 'red', 'none', 'grey', 'virtual-chain');
+                if (this.isVirtualChain) {
+                    this.element.classList.add('virtual-chain');
+                } else {
+                    this.element.classList.add(this.color);
+                }
+                const size = (this.isVirtualChain ? BASE_VIRTUAL_BLOCK_SIZE : BASE_BLOCK_SIZE) * zoomLevel;
+                this.element.style.width = `${size}px`; this.element.style.height = `${size}px`;
+                this.element.style.padding = `${8 * zoomLevel}px`;
+                this.element.style.fontSize = `${BASE_FONT_SIZE}px`;
+                this.element.style.left = `${this.x}px`; this.element.style.top = `${this.y}px`;
+            }
+
+            getCenterX() { return this.x + ((this.isVirtualChain ? BASE_VIRTUAL_BLOCK_SIZE : BASE_BLOCK_SIZE) * zoomLevel) / 2; }
+            getCenterY() { return this.y + ((this.isVirtualChain ? BASE_VIRTUAL_BLOCK_SIZE : BASE_BLOCK_SIZE) * zoomLevel) / 2; }
+            remove() { if (this.element) this.element.remove(); }
+        }
+        
+        function setRedBlockTargetY(redBlock) {
+            const redZoneBaseY = centerY + 150; 
+            const hash = redBlock.id;
+            const offset = (parseInt(hash.substring(0, 4), 16) % 100) - 50; 
+            redBlock.targetY = redZoneBaseY + offset;
+        }
+
+        function updateDrawableBlocksList() {
+            const allBlocks = blocks;
+            const alwaysDrawBlocks = allBlocks.filter(b => b.isVirtualChain || b.color === 'red');
+            const otherBlocks = allBlocks
+                .filter(b => !b.isVirtualChain && b.color !== 'red')
+                .sort((a, b) => (b.sequence || 0) - (a.sequence || 0)); 
+            const limitedBlocks = otherBlocks.slice(0, 60); 
+            blocksToDraw = [...new Set([...alwaysDrawBlocks, ...limitedBlocks])];
+        }
+
+        function processIncomingData(data) {
+            blockCache.push(...data.newBlocks);
+            sortBlockCache();
+        }
+
+        function sortBlockCache() {
+            switch (processingMode) {
+                case 'Rx': blockCache.sort((a, b) => (a.sequence || 0) - (b.sequence || 0)); break;
+                case 'Ts': blockCache.sort((a, b) => (parseInt(a.rawApiData?.header?.timestamp || 0)) - (parseInt(b.rawApiData?.header?.timestamp || 0))); break;
+                case 'DAA': blockCache.sort((a, b) => (a.daaScore || 0) - (b.daaScore || 0)); break;
+                case 'Bs': blockCache.sort((a, b) => (a.blueScore || 0) - (b.blueScore || 0)); break;
+                case 'Bw':
+                    blockCache.sort((a, b) => {
+                        const aWork = BigInt('0x' + (a.rawApiData?.header?.blueWork || '0'));
+                        const bWork = BigInt('0x' + (b.rawApiData?.header?.blueWork || '0'));
+                        if (aWork < bWork) return -1; if (aWork > bWork) return 1; return 0;
+                    });
+                    break;
+                default: blockCache.sort((a, b) => (a.sequence || 0) - (b.sequence || 0)); break;
+            }
+        }
+        
+        function processCacheInBackground() {
+            if (!animationRunning) { blockCache = []; return; };
+            updateApiStatus(`Fast-forwarding...`, '--block-red-bg');
+            let latestBlueScoreInCache = 0;
+            if (blockCache.length > 0) {
+                 latestBlueScoreInCache = blockCache.reduce((max, b) => Math.max(max, b.blueScore), 0);
+            }
+            const pruningThreshold = latestBlueScoreInCache - PRUNING_SCORE_DIFFERENCE;
+            for (const [hash, blockData] of allBlocksMaster.entries()) {
+                if (blockData.blueScore < pruningThreshold) allBlocksMaster.delete(hash);
+            }
+            blockCache = [];
+            updateApiStatus('Active', '--block-blue-bg');
+        }
+
+        function processNewBlocksFromCache() {
+            if (animationRunning) {
+                const currentFastForwardThreshold = processingMode === 'Ts' ? 750 : FAST_FORWARD_THRESHOLD;
+                if (blockCache.length > currentFastForwardThreshold) {
+                    processCacheInBackground();
+                    if (animationRunning) {
+                         drawTimeout = setTimeout(processNewBlocksFromCache, 1000 / currentBPS);
+                    }
+                    return;
+                }
+
+                if (blockCache.length > 0) {
+                    const internalBlockData = blockCache.shift();
+                    if (!blocks.some(b => b.id === internalBlockData.hash)) {
+                        const topMargin = containerHeight * 0.025;
+                        const spawnAreaStartY = topMargin;
+                        const spawnAreaHeight = containerHeight - (topMargin * 2);
+                        const tipSpawnAreaWidth = 100; 
+                        internalBlockData.y = spawnAreaStartY + Math.random() * spawnAreaHeight;
+                        internalBlockData.x = containerWidth - (Math.random() * tipSpawnAreaWidth);
+                        
+                        const newBlock = new Block(internalBlockData);
+                        let maxParentX = -1;
+                        newBlock.parentHashes.forEach(parentHash => {
+                            const parentBlock = blocks.find(p => p.id === parentHash);
+                            if (parentBlock) maxParentX = Math.max(maxParentX, parentBlock.x);
+                        });
+                        if (maxParentX > -1 && newBlock.x <= maxParentX) {
+                            newBlock.x = maxParentX + BASE_BLOCK_SIZE * zoomLevel + 20;
+                        }
+                        newBlock.x = Math.min(newBlock.x, containerWidth - BASE_BLOCK_SIZE * zoomLevel);
+                        
+                        blocks.push(newBlock);
+                        blocks.forEach(b => { 
+                            if (b.parents.length !== b.parentHashes.length) {
+                                b.parents = b.parentHashes.map(hash => blocks.find(p => p.id === hash)).filter(p => p);
+                            }
+                        });
+                        
+                        newBlock.createElement();
+                        blocksDrawnInLastInterval++;
+                    }
+                }
+
+                let targetBPS = BASE_BPS;
+                const targetCacheSize = processingMode === 'Ts' ? 600 : BASE_CACHE_TARGET;
+                const cacheDiff = blockCache.length - targetCacheSize;
+                if (cacheDiff > 10) targetBPS = Math.min(MAX_BPS, BASE_BPS + (cacheDiff - 10) * 0.15);
+                else if (cacheDiff < -20) targetBPS = Math.max(5, BASE_BPS + (cacheDiff + 20) * 0.2);
+                currentBPS += (targetBPS - currentBPS) * 0.05;
+            }
+
+            if (animationRunning) {
+                clearTimeout(drawTimeout);
+                drawTimeout = setTimeout(processNewBlocksFromCache, 1000 / currentBPS);
+            }
+        }
+        
+        function isBlockABeforeBlockB(blockA, blockB) {
+            const daaDiff = blockA.daaScore - blockB.daaScore;
+            if (daaDiff > GHOSTDAG_K + 1) return false;
+            if (daaDiff < -(GHOSTDAG_K + 1)) return true;
+            if (blockB.parentHashes.includes(blockA.id)) return true;
+            if (blockA.parentHashes.includes(blockB.id)) return false;
+            
+            if (blockA.isVirtualChain && !blockB.isVirtualChain) return true;
+            if (!blockA.isVirtualChain && blockB.isVirtualChain) return false;
+            const colorValue = (c) => ({'blue': 0, 'grey': 1, 'red': 2}[c] ?? 3);
+            const aColorVal = colorValue(blockA.color), bColorVal = colorValue(blockB.color);
+            if (aColorVal < bColorVal) return true; if (aColorVal > bColorVal) return false;
+            if (blockA.blueWork < blockB.blueWork) return true; if (blockA.blueWork > blockB.blueWork) return false;
+            return blockA.id.localeCompare(blockB.id) < 0;
+        }
+
+        // --- Animation & Rendering Loop ---
+        function applyDagConstraints() {
+            const allBlocks = blocks;
+            allBlocks.forEach(b => b.velocity_multiplier = 1.0);
+            const sortedBlocks = [...allBlocks].sort((a, b) => a.x - b.x);
+            for (let i = 0; i < sortedBlocks.length; i++) {
+                const blockA = sortedBlocks[i];
+                for (let j = i + 1; j < sortedBlocks.length; j++) {
+                    const blockB = sortedBlocks[j];
+                    if (blockB.x - blockA.x > (100 * zoomLevel)) break;
+                    const aShouldBeFirst = isBlockABeforeBlockB(blockA, blockB);
+                    const aIsFirstSpatially = blockA.x < blockB.x;
+                    if (aShouldBeFirst && !aIsFirstSpatially) {
+                        blockA.velocity_multiplier = 1.8; blockB.velocity_multiplier = 0.2;
+                    } else if (!aShouldBeFirst && aIsFirstSpatially) {
+                        blockB.velocity_multiplier = 1.8; blockA.velocity_multiplier = 0.2;
+                    } else {
+                        const dx = blockA.x - blockB.x, dy = blockA.y - blockB.y;
+                        if (Math.abs(dy) < (100 * zoomLevel)) {
+                            const dist = GUARANTEED_MIN_DISTANCE * zoomLevel;
+                            if (Math.abs(dx) < dist) {
+                                const correction = (dist - Math.abs(dx)) * 0.1;
+                                if (aIsFirstSpatially) blockA.x -= correction;
+                                else blockB.x -= correction;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        function applyOvertakeNudge() {
+            const allBlocks = blocks;
+            const orderingZoneBoundary = containerWidth * zones.parallel.start;
+            const blockMap = new Map(allBlocks.map(b => [b.id, b]));
+            for (const [key, overtake] of activeOvertakes.entries()) {
+                const overtaker = blockMap.get(overtake.overtakerId);
+                const overtaken = blockMap.get(overtake.overtakenId);
+                if (!overtaker || !overtaken || Math.abs(overtaker.y - overtaken.y) >= 60 * zoomLevel) activeOvertakes.delete(key);
+            }
+            const sortedBlocks = [...allBlocks].sort((a, b) => a.x - b.x);
+            for (let i = 0; i < sortedBlocks.length; i++) {
+                const blockA = sortedBlocks[i];
+                for (let j = i + 1; j < sortedBlocks.length; j++) {
+                    const blockB = sortedBlocks[j];
+                    if (blockB.x - blockA.x > (100 * zoomLevel)) break;
+                    if (blockA.x > orderingZoneBoundary || blockB.x > orderingZoneBoundary) continue;
+                    if (Math.abs(blockA.x - blockB.x) < 20) {
+                        const aShouldBeFirst = isBlockABeforeBlockB(blockA, blockB);
+                        const aIsFirstSpatially = blockA.x <= blockB.x;
+                        if (aShouldBeFirst && !aIsFirstSpatially) {
+                            if (!activeOvertakes.has(`${blockA.id}->${blockB.id}`)) activeOvertakes.set(`${blockA.id}->${blockB.id}`, { overtakerId: blockA.id, overtakenId: blockB.id });
+                        } else if (!aShouldBeFirst && aIsFirstSpatially) {
+                            if (!activeOvertakes.has(`${blockB.id}->${blockA.id}`)) activeOvertakes.set(`${blockB.id}->${blockA.id}`, { overtakerId: blockB.id, overtakenId: blockA.id });
+                        }
+                    }
+                }
+            }
+            for (const overtake of activeOvertakes.values()) {
+                const overtaker = blockMap.get(overtake.overtakerId);
+                const overtaken = blockMap.get(overtake.overtakenId);
+                if (overtaker && overtaken) {
+                    overtaker.velocity_multiplier = 3.0; overtaken.velocity_multiplier = 0.1;
+                }
+            }
+        }
+
+        function animate(timestamp) {
+            animationLoopId = requestAnimationFrame(animate);
+            if (!animationRunning) { lastTimestamp = performance.now(); return; }
+            const deltaTime = Math.min(0.05, (timestamp - lastTimestamp) / 1000);
+            lastTimestamp = timestamp;
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height); vCtx.clearRect(0, 0, virtualCanvas.width, virtualCanvas.height);
+            applyDagConstraints();
+            applyOvertakeNudge();
+            blocks.forEach(block => block.updatePosition(deltaTime)); 
+            enforceParentChildSpacing(deltaTime);
+            daaScores.forEach(score => score.updatePosition());
+
+            const removalThreshold = -650;
+            const blocksToKeep = [];
+            let wasBlockRemoved = false;
+            blocks.forEach(block => {
+                if (block.x < removalThreshold) {
+                    block.remove(); wasBlockRemoved = true;
+                } else {
+                    blocksToKeep.push(block);
+                }
+            });
+            if (wasBlockRemoved) {
+                blocks = blocksToKeep;
+                activeOvertakes.clear();
+                updateDrawableBlocksList();
+            }
+            daaScores = daaScores.filter(s => (s.targetBlock && blocks.includes(s.targetBlock)) || (s.remove(), false));
+            drawConnections();
+            drawVirtualChain();
+        }
+        
+        // --- UI & Controls ---
+        function updateStatsDisplay() {
+            if(document.getElementById('blueScore')) document.getElementById('blueScore').textContent = blueScore.toLocaleString();
+            if(document.getElementById('daaScore')) document.getElementById('daaScore').textContent = daaScore.toLocaleString();
+            if(document.getElementById('bps')) {
+                document.getElementById('bps').textContent = blocksDrawnInLastInterval.toFixed(1);
+                blocksDrawnInLastInterval = 0; 
+            }
+            if(document.getElementById('blockCacheCount')) document.getElementById('blockCacheCount').textContent = blockCache.length;
+        }
+
+        function applyZoom() {
+            const normalizedZoom = (zoomLevel - MIN_ZOOM) / (MAX_ZOOM - MIN_ZOOM);
+            const linearEnd = 0.2 + 0.4 * (1 - normalizedZoom);
+            const transformEnd = linearEnd + 0.3;
+            zones.linear.end = linearEnd;
+            zones.transform.start = linearEnd; zones.transform.end = transformEnd;
+            zones.parallel.start = transformEnd;
+            blocks.forEach(b => { b.updateDisplayText(); b.updateStyle(); });
+            updateZoomButtons();
+        }
+        
+        function zoomIn() { if (zoomLevel < MAX_ZOOM) { zoomLevel = Math.min(MAX_ZOOM, zoomLevel + ZOOM_STEP); applyZoom(); } }
+        function zoomOut() { if (zoomLevel > MIN_ZOOM) { zoomLevel = Math.max(MIN_ZOOM, zoomLevel - ZOOM_STEP); applyZoom(); } }
+        
+        function toggleAnimation() {
+            animationRunning = !animationRunning;
+            if (animationRunning) {
+                document.getElementById('toggleBtn').textContent = 'Pause';
+                clearTimeout(stopEngineTimer);
+                const elapsed = pauseTimestamp ? performance.now() - pauseTimestamp : 0;
+                if (pauseTimestamp === null || elapsed <= 10000) startEngine();
+                else updateApiStatus('Stopped (Manual)', '--subtitle-color');
+                pauseTimestamp = null;
+                lastTimestamp = performance.now();
+                processNewBlocksFromCache();
+            } else {
+                document.getElementById('toggleBtn').textContent = 'Resume';
+                clearTimeout(drawTimeout);
+                pauseTimestamp = performance.now();
+                const SHUTDOWN_DELAY = 5000;
+                stopEngineTimer = setTimeout(stopEngine, SHUTDOWN_DELAY);
+            }
+        }
+        
+        function resetVisualization() {
+            isResetting = true;
+            stopEngine();
+            if(animationLoopId) cancelAnimationFrame(animationLoopId);
+            if(drawTimeout) clearTimeout(drawTimeout);
+            if(statsUpdateInterval) clearInterval(statsUpdateInterval);
+            if(ghostdagUpdateInterval) clearInterval(ghostdagUpdateInterval);
+            if(ghostdagWorker) ghostdagWorker.terminate();
+            
+            blocks.forEach(b => b.remove());
+            daaScores.forEach(s => s.remove());
+            blocks = []; daaScores = []; blockCache = [];
+            activeOvertakes.clear();
+            
+            allBlocksMaster.clear();
+            blueScore = 0; daaScore = 0; lastKnownHash = null;
+            blocksToDraw = [];
+            lastDaaLabelBlueScore = 0;
+            blockSequence = 0;
+
+            updateStatsDisplay();
+            animationRunning = true;
+            document.getElementById('toggleBtn').textContent = 'Pause';
+            isResetting = false;
+            init(); 
+        }
+
+        function toggleLogo() {
+            const o = document.getElementById('original-logo'), s = document.getElementById('swapped-logo');
+            if (o.style.display === 'none') { o.style.display = 'block'; s.style.display = 'none'; }
+            else { o.style.display = 'none'; s.style.display = 'block'; }
+        }
+
+        function adjustLayout() {
+            const s = document.getElementById('stats-panel'), c = document.getElementById('controls');
+            if (!s || !c) return;
+            const sR = s.getBoundingClientRect(), cR = c.getBoundingClientRect();
+            if (sR.right > cR.left && sR.bottom > cR.top) s.style.width = (cR.left - sR.left - 10) + 'px';
+            else s.style.width = '180px';
+        }
+
+        window.addEventListener('load', init);
+        window.addEventListener('resize', () => { setContainerHeight(); resizeCanvas(); adjustLayout(); });
+        
+        class DAAScoreLabel { 
+            constructor(score, targetBlock) { this.score = score; this.targetBlock = targetBlock; this.createElement(); }
+            createElement() { const d = document.createElement('div'); d.className = 'daa-score'; d.textContent = this.score.toLocaleString(); this.element = d; this.updatePosition(); document.getElementById('canvasContainer').appendChild(d); }
+            updatePosition() { if (this.targetBlock && this.element) { this.element.style.left = `${this.targetBlock.getCenterX()}px`; this.element.style.top = `${containerHeight - 80}px`; } }
+            remove() { if (this.element) this.element.remove(); }
+        }
+        Block.prototype.getZone = function() { const rX = this.x / containerWidth; if (rX > zones.parallel.start) return 'parallel'; if (rX > zones.transform.start) return 'transform'; return 'linear'; }
+        
+        Block.prototype.updateDisplayText = function() { 
+            if (zoomLevel <= MIN_ZOOM) { this.displayText = ""; return; } 
+            const p = 8 * zoomLevel, s = (this.isVirtualChain ? 70 : 50) * zoomLevel; 
+            const eW = Math.max(0, s - p * 2), cW = 6, cPL = Math.floor(eW / cW); 
+            if (cPL <= 2) { this.displayText = ""; return; } 
+            const mL = Math.floor(Math.max(0, s - p * 2) / 11); 
+            if (mL <= 0) { this.displayText = ""; return; } 
+            const tC = Math.min(this.id.length, cPL * mL), t = this.id.substring(0, tC); let r = ""; 
+            for (let i = 0; i < tC; i += cPL) r += t.substring(i, i + cPL) + '\n'; 
+            this.displayText = r.trim(); 
+        }
+        
+        Block.prototype.updatePosition = function(deltaTime) {
+            this.x -= (50 * zoomLevel * this.velocity_multiplier) * deltaTime;
+            const pZ = this.zone; this.zone = this.getZone();
+            const s = (this.isVirtualChain ? 70 : 50) * zoomLevel;
+            if (this.color === 'red') setRedBlockTargetY(this);
+            else {
+                const isB = this.color === 'blue' || this.color === 'grey' || this.isParentOfVC;
+                if (pZ !== this.zone) {
+                    if (this.zone === 'transform' && isB) this.targetY = centerY - s / 2;
+                    if (this.zone === 'linear' && isB && !this.daaLabelAdded) {
+                        if (this.blueScore >= lastDaaLabelBlueScore + 10) {
+                            daaScores.push(new DAAScoreLabel(this.daaScore, this));
+                            this.daaLabelAdded = true; lastDaaLabelBlueScore = this.blueScore;
+                        }
+                    }
+                }
+                if (this.zone === 'linear' && isB) this.targetY = centerY - s / 2;
+            }
+            if(this.targetY && Math.abs(this.y - this.targetY) > 1) this.y += (this.targetY - this.y) * (1 - Math.exp(-Y_SMOOTHING_FACTOR * deltaTime));
+            if (this.element) this.updateStyle();
+        }
+
+        enforceParentChildSpacing = function(deltaTime) { 
+            for (const c of blocks) { 
+                for (const p of c.parents) { 
+                    if (!p) continue; 
+                    const mS = (p.color === 'red' ? 30 : 10) * zoomLevel; 
+                    if (p.x > c.x - mS) p.x -= ((p.x - (c.x - mS)) / 0.05) * deltaTime; 
+                } 
+            } 
+        }
+        updateScoreStats = function(n) { if (n.length === 0) return; const r = n.map(b => b.raw_data); blueScore = Math.max(blueScore, ...r.map(b => b.blueScore)); daaScore = Math.max(daaScore, ...r.map(b => b.daaScore)); }
+        updateZoomButtons = function() { document.getElementById('zoomInBtn').disabled = zoomLevel >= MAX_ZOOM; document.getElementById('zoomOutBtn').disabled = zoomLevel <= MIN_ZOOM; }
+        toggleNightMode = function() { const b = document.body; b.classList.toggle('dark-mode'); const n = document.getElementById('nightModeBtn'); if (b.classList.contains('dark-mode')) { localStorage.setItem('nightMode', 'enabled'); n.textContent = '☀️'; } else { localStorage.setItem('nightMode', 'disabled'); n.textContent = '🌙'; } }
+        
+        toggleProcessingMode = async function() {
+            if (animationRunning) clearTimeout(drawTimeout);
+            stopEngine();
+            updateApiStatus('Switching...', '--subtitle-color');
+            const cI = processingModes.indexOf(processingMode), nI = (cI + 1) % processingModes.length;
+            processingMode = processingModes[nI];
+            const pB = document.getElementById('processingModeBtn');
+            pB.textContent = processingMode; pB.title = processingModeTitles[processingMode];
+            blockCache = []; blockSequence = 0;
+            await new Promise(r => setTimeout(r, 200));
+            if (animationRunning) { await startEngine(); processNewBlocksFromCache(); }
+        }
+        
+        drawConnections = function() {
+            if (zoomLevel <= MIN_ZOOM) return;
+            ctx.strokeStyle = getComputedStyle(document.body).getPropertyValue('--canvas-line-color');
+            ctx.lineWidth = BASE_LINE_WIDTH * zoomLevel;
+            blocksToDraw.forEach(b => {
+                if (b.x < -BASE_BLOCK_SIZE) return;
+                const pTD = b.parents.filter(p => p).slice(0, dynamicParentLimit); 
+                pTD.forEach(p => { 
+                    if (p && blocksToDraw.includes(p)) { 
+                        ctx.beginPath(); ctx.moveTo(b.getCenterX(), b.getCenterY()); ctx.lineTo(p.getCenterX(), p.getCenterY()); ctx.stroke(); 
+                    } 
+                }); 
+            }); 
+        }
+
+        drawVirtualChain = function() { 
+            const vB = blocks.filter(b => b.isVirtualChain); 
+            if (vB.length < 2) return; 
+            vCtx.strokeStyle = getComputedStyle(document.body).getPropertyValue('--vc-line-color'); 
+            vCtx.lineWidth = 4 * zoomLevel; vCtx.globalAlpha = 0.8; vCtx.beginPath(); 
+            vB.forEach(cB => { 
+                if (cB.x < -BASE_BLOCK_SIZE) return;
+                const mP = cB.parents.find(p => p && p.isVirtualChain);
+                if (mP) { vCtx.moveTo(cB.getCenterX(), cB.getCenterY()); vCtx.lineTo(mP.getCenterX(), mP.getCenterY()); }
+            }); 
+            vCtx.stroke(); vCtx.globalAlpha = 1; 
+        }
+        showInfoModal = function(d) { const m = document.getElementById('infoModal'), t = document.getElementById('modalText'), s = new WeakSet(), r = (k, v) => { if (typeof v === 'object' && v !== null) { if (s.has(v)) return '[Circular]'; s.add(v); } if (typeof v === 'bigint') return v.toString() + 'n'; return v; }; t.textContent = JSON.stringify(d, r, 2); m.style.display = 'flex'; }
+        closeInfoModal = function() { document.getElementById('infoModal').style.display = 'none'; }
+    </script>
+</body>
+</html>
